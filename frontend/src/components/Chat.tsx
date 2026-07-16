@@ -5,46 +5,122 @@ interface Props {
   aiAvailable: boolean
 }
 
-// Xush kelibsiz ekranidagi suzuvchi bubble'lar (bosilsa — savol yuboriladi).
 const FLOAT_PROMPTS = [
   'Bu tovar qaysi TIF TN kodga kiradi?',
   '50 mln so\'mlik smartfon uchun bojni hisobla',
 ]
 
-// Pastdagi tezkor amal chiplari (bosilsa — matn maydoniga boshlang'ich yoziladi).
 const QUICK = [
   { icon: '🧮', label: 'Boj hisoblash', starter: 'Bojni hisoblab ber. Bojxona qiymati: ___ so\'m, tovar: ___' },
   { icon: '🔎', label: 'HS kod topish', starter: 'Bu tovarning TIF TN kodini top: ' },
   { icon: '📋', label: 'Deklaratsiya', starter: 'Deklaratsiya (GTD) to\'ldirish bo\'yicha yordam ber: ' },
 ]
 
-const MAX_EDGE = 1568 // Claude uchun tavsiya etilgan maksimal tomon (px)
+const MAX_EDGE = 1568
 
-// Do'stona robot-mascot.
-function Mascot() {
+// Robot boshi (logoga mos) — halqa/hujjatsiz, header va katta mascot uchun umumiy.
+function RobotHead() {
   return (
-    <svg className="mascot" viewBox="0 0 170 165" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-      <ellipse cx="85" cy="150" rx="42" ry="8" fill="#6d5cf0" opacity="0.15" />
-      <line x1="85" y1="20" x2="85" y2="40" stroke="#c7d0f7" strokeWidth="3" strokeLinecap="round" />
-      <circle cx="85" cy="15" r="6.5" fill="#6d5cf0" />
-      <rect x="6" y="66" width="27" height="50" rx="13.5" fill="#6d5cf0" />
-      <rect x="137" y="66" width="27" height="50" rx="13.5" fill="#8a7bf5" />
-      <rect x="30" y="40" width="110" height="98" rx="28" fill="#20263a" />
-      <rect x="44" y="56" width="82" height="66" rx="20" fill="#11151f" />
-      <circle cx="70" cy="86" r="7.5" fill="#ffffff" />
-      <circle cx="100" cy="86" r="7.5" fill="#ffffff" />
-      <circle cx="72" cy="86" r="2.6" fill="#20263a" />
-      <circle cx="102" cy="86" r="2.6" fill="#20263a" />
-      <g fill="#9aa4c4">
-        <circle cx="78" cy="106" r="2.6" />
-        <circle cx="85" cy="106" r="2.6" />
-        <circle cx="92" cy="106" r="2.6" />
+    <g>
+      {/* antenna */}
+      <line x1="130" y1="58" x2="130" y2="40" stroke="#2b3a55" strokeWidth="5" strokeLinecap="round" />
+      <circle cx="130" cy="34" r="9" fill="url(#dk-ball)" />
+      <circle cx="127" cy="31" r="3" fill="#bfe4ff" opacity="0.9" />
+      {/* ears */}
+      <rect x="60" y="96" width="22" height="42" rx="11" fill="url(#dk-body)" stroke="#e3e9f2" />
+      <rect x="178" y="96" width="22" height="42" rx="11" fill="url(#dk-body)" stroke="#e3e9f2" />
+      <circle cx="71" cy="117" r="6" fill="#2b3a55" opacity="0.85" />
+      <circle cx="189" cy="117" r="6" fill="#2b3a55" opacity="0.85" />
+      {/* head */}
+      <rect x="70" y="58" width="120" height="104" rx="42" fill="url(#dk-body)" stroke="#e3e9f2" strokeWidth="2" />
+      <ellipse cx="104" cy="86" rx="24" ry="14" fill="#ffffff" opacity="0.65" />
+      {/* face */}
+      <rect x="86" y="76" width="88" height="74" rx="30" fill="url(#dk-face)" />
+      {/* smiling eyes */}
+      <path d="M102 112 q10 -13 20 0" stroke="#2fd4f2" strokeWidth="6" strokeLinecap="round" fill="none" />
+      <path d="M138 112 q10 -13 20 0" stroke="#2fd4f2" strokeWidth="6" strokeLinecap="round" fill="none" />
+      {/* smile */}
+      <path d="M114 128 q16 17 32 0" stroke="#2fd4f2" strokeWidth="6" strokeLinecap="round" fill="none" />
+    </g>
+  )
+}
+
+// To'liq logo belgisi: robot + moviy halqa + hujjat (checkmark bilan).
+function LogoMark() {
+  return (
+    <svg className="logo-mark" viewBox="0 0 260 244" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <defs>
+        <linearGradient id="dk-ring" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stopColor="#37c0ff" />
+          <stop offset="1" stopColor="#2563eb" />
+        </linearGradient>
+        <linearGradient id="dk-body" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#ffffff" />
+          <stop offset="1" stopColor="#e0e8f3" />
+        </linearGradient>
+        <linearGradient id="dk-ball" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stopColor="#66ccff" />
+          <stop offset="1" stopColor="#2563eb" />
+        </linearGradient>
+        <radialGradient id="dk-face" cx="0.5" cy="0.4" r="0.85">
+          <stop offset="0" stopColor="#15233d" />
+          <stop offset="1" stopColor="#0a1220" />
+        </radialGradient>
+      </defs>
+      {/* moviy halqa */}
+      <circle cx="128" cy="118" r="96" stroke="url(#dk-ring)" strokeWidth="7" opacity="0.92" />
+      {/* yelka */}
+      <path d="M96 176 q34 -20 68 0 q10 6 10 20 h-88 q0 -14 10 -20 z" fill="url(#dk-body)" stroke="#e3e9f2" strokeWidth="2" />
+      <RobotHead />
+      {/* hujjat */}
+      <g transform="rotate(5 176 168)">
+        <rect x="150" y="120" width="74" height="90" rx="9" fill="#ffffff" stroke="#e3e9f2" strokeWidth="2" />
+        <path d="M206 120 h18 v18 z" fill="#2f8bff" />
+        <path d="M206 120 v18 h18" fill="none" stroke="#e3e9f2" strokeWidth="1.5" />
+        <rect x="162" y="140" width="30" height="6" rx="3" fill="#29abff" />
+        <rect x="162" y="154" width="48" height="4.5" rx="2.25" fill="#26324b" />
+        <rect x="162" y="165" width="48" height="4.5" rx="2.25" fill="#26324b" />
+        <rect x="162" y="176" width="34" height="4.5" rx="2.25" fill="#26324b" />
+        <circle cx="196" cy="192" r="13" fill="url(#dk-ball)" />
+        <path d="M190 192 l4 4 l8 -8" stroke="#ffffff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" fill="none" />
       </g>
     </svg>
   )
 }
 
-// Faylni kichraytirib, base64 rasm va ko'rsatish uchun data-URL qaytaradi.
+// Kichik logo (header uchun): robot boshi + wordmark.
+function MiniLogo() {
+  return (
+    <div className="mini-logo">
+      <svg viewBox="46 24 168 148" className="mini-robot" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <defs>
+          <linearGradient id="dk-body-s" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stopColor="#ffffff" /><stop offset="1" stopColor="#e0e8f3" />
+          </linearGradient>
+          <linearGradient id="dk-ball-s" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stopColor="#66ccff" /><stop offset="1" stopColor="#2563eb" />
+          </linearGradient>
+          <radialGradient id="dk-face-s" cx="0.5" cy="0.4" r="0.85">
+            <stop offset="0" stopColor="#15233d" /><stop offset="1" stopColor="#0a1220" />
+          </radialGradient>
+        </defs>
+        <g>
+          <line x1="130" y1="58" x2="130" y2="40" stroke="#2b3a55" strokeWidth="5" strokeLinecap="round" />
+          <circle cx="130" cy="34" r="9" fill="url(#dk-ball-s)" />
+          <rect x="60" y="96" width="22" height="42" rx="11" fill="url(#dk-body-s)" />
+          <rect x="178" y="96" width="22" height="42" rx="11" fill="url(#dk-body-s)" />
+          <rect x="70" y="58" width="120" height="104" rx="42" fill="url(#dk-body-s)" stroke="#e3e9f2" strokeWidth="2" />
+          <rect x="86" y="76" width="88" height="74" rx="30" fill="url(#dk-face-s)" />
+          <path d="M102 112 q10 -13 20 0" stroke="#2fd4f2" strokeWidth="6" strokeLinecap="round" fill="none" />
+          <path d="M138 112 q10 -13 20 0" stroke="#2fd4f2" strokeWidth="6" strokeLinecap="round" fill="none" />
+          <path d="M114 128 q16 17 32 0" stroke="#2fd4f2" strokeWidth="6" strokeLinecap="round" fill="none" />
+        </g>
+      </svg>
+      <span className="wordmark sm">Deklarant <span className="wm-a">Ai</span></span>
+    </div>
+  )
+}
+
 function fileToImage(file: File): Promise<{ img: ChatImage; url: string }> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
@@ -92,7 +168,6 @@ export default function Chat({ aiAvailable }: Props) {
     endRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, loading, pending])
 
-  // Matn maydoni balandligini tarkibga moslash.
   useEffect(() => {
     const ta = taRef.current
     if (ta) { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 140) + 'px' }
@@ -145,7 +220,6 @@ export default function Chat({ aiAvailable }: Props) {
     if (files.length) { e.preventDefault(); addFiles(files) }
   }
 
-  // Ovozli kiritish (Web Speech API).
   function toggleVoice() {
     const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
     if (!SR) { setError('Brauzer ovozli kiritishni qo\'llab-quvvatlamaydi'); return }
@@ -153,10 +227,7 @@ export default function Chat({ aiAvailable }: Props) {
     const r = new SR()
     r.lang = 'uz-UZ'
     r.interimResults = false
-    r.onresult = (ev: any) => {
-      const t = ev.results[0][0].transcript
-      setInput((prev) => (prev ? prev + ' ' : '') + t)
-    }
+    r.onresult = (ev: any) => setInput((prev) => (prev ? prev + ' ' : '') + ev.results[0][0].transcript)
     r.onerror = () => setListening(false)
     r.onend = () => setListening(false)
     recogRef.current = r
@@ -173,19 +244,26 @@ export default function Chat({ aiAvailable }: Props) {
       onDragLeave={() => setDragOver(false)}
       onDrop={(e) => { e.preventDefault(); setDragOver(false); addFiles(e.dataTransfer.files) }}
     >
+      {!empty && (
+        <header className="topbar">
+          <MiniLogo />
+        </header>
+      )}
+
       {empty ? (
         <div className="hero">
-          <h1 className="hero-title">
-            <span className="greet">Salom!</span> Bojxona ishlarini birga hal qilamiz
-          </h1>
           <div className="mascot-stage">
             <button className="float-bubble b-left" onClick={() => send(FLOAT_PROMPTS[0], [])}>
               <span className="fb-dot" /> {FLOAT_PROMPTS[0]}
             </button>
-            <Mascot />
+            <LogoMark />
             <button className="float-bubble b-right" onClick={() => send(FLOAT_PROMPTS[1], [])}>
               <span className="fb-dot" /> {FLOAT_PROMPTS[1]}
             </button>
+          </div>
+          <div className="hero-brand">
+            <h1 className="wordmark">Deklarant <span className="wm-a">Ai</span></h1>
+            <p className="tagline">Bojxona rasmiylashtiruvida aqlli yordamchingiz</p>
           </div>
         </div>
       ) : (
@@ -199,25 +277,20 @@ export default function Chat({ aiAvailable }: Props) {
             </div>
           ))}
           {loading && (
-            <div className="bubble assistant typing">
-              <span></span><span></span><span></span>
-            </div>
+            <div className="bubble assistant typing"><span></span><span></span><span></span></div>
           )}
           <div ref={endRef} />
         </div>
       )}
 
-      {/* Composer karta */}
       <div className="composer-card">
         <div className={`composer-banner ${aiAvailable ? '' : 'warn'}`}>
           <span className="cb-left">
             {aiAvailable
-              ? <>✨ Deklarant AI — kod, boj va qonunchilik yordamchisi</>
+              ? <>✨ Kod, boj va qonunchilik bo'yicha yordam beraman</>
               : <>⚠️ AI o'chirilgan — <code>ANTHROPIC_API_KEY</code> ni sozlang</>}
           </span>
-          <a className="banner-btn" href="https://customs.uz" target="_blank" rel="noreferrer">
-            customs.uz →
-          </a>
+          <a className="banner-btn" href="https://customs.uz" target="_blank" rel="noreferrer">customs.uz →</a>
         </div>
 
         {error && <div className="composer-error">{error}</div>}
@@ -257,31 +330,14 @@ export default function Chat({ aiAvailable }: Props) {
             ))}
           </div>
           <div className="send-group">
-            <button
-              className={`round-btn mic ${listening ? 'on' : ''}`}
-              onClick={toggleVoice}
-              title="Ovozli kiritish"
-              type="button"
-            >🎙️</button>
-            <button
-              className="round-btn send"
-              onClick={() => submit()}
-              disabled={!canSend}
-              title="Yuborish"
-              type="button"
-            >➤</button>
+            <button className={`round-btn mic ${listening ? 'on' : ''}`} onClick={toggleVoice} title="Ovozli kiritish" type="button">🎙️</button>
+            <button className="round-btn send" onClick={() => submit()} disabled={!canSend} title="Yuborish" type="button">➤</button>
           </div>
         </div>
       </div>
 
-      <input
-        ref={fileRef}
-        type="file"
-        accept="image/*"
-        multiple
-        style={{ display: 'none' }}
-        onChange={(e) => { if (e.target.files) addFiles(e.target.files); e.target.value = '' }}
-      />
+      <input ref={fileRef} type="file" accept="image/*" multiple style={{ display: 'none' }}
+        onChange={(e) => { if (e.target.files) addFiles(e.target.files); e.target.value = '' }} />
     </div>
   )
 }

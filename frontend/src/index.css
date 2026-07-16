@@ -1,17 +1,18 @@
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
 :root {
-  --ink: #1e2333;
-  --ink-soft: #3b4256;
-  --muted: #7c85a0;
-  --line: #ececf3;
+  --ink: #16233f;
+  --ink-soft: #3a4763;
+  --muted: #8b93a7;
+  --line: #e7ecf4;
   --card: #ffffff;
-  --primary: #5b60e8;
-  --primary-2: #7c5cff;
+  --primary: #2563eb;
+  --primary-2: #29abff;
+  --grad: linear-gradient(135deg, #29abff 0%, #2563eb 100%);
   --accent: #10b981;
   --danger: #ef4444;
-  --shadow: 0 18px 45px -20px rgba(56, 52, 120, 0.35);
-  --shadow-sm: 0 6px 18px -8px rgba(56, 52, 120, 0.25);
+  --shadow: 0 20px 48px -22px rgba(37, 99, 235, 0.35);
+  --shadow-sm: 0 8px 20px -10px rgba(37, 99, 235, 0.28);
 }
 
 html, body { height: 100%; }
@@ -21,17 +22,17 @@ body {
   color: var(--ink);
   -webkit-font-smoothing: antialiased;
   background:
-    radial-gradient(900px 520px at 12% -5%, #ffe7d6 0%, rgba(255, 231, 214, 0) 55%),
-    radial-gradient(900px 640px at 105% 108%, #d7e3ff 0%, rgba(215, 227, 255, 0) 55%),
-    radial-gradient(700px 500px at 90% 0%, #f0e4ff 0%, rgba(240, 228, 255, 0) 50%),
-    linear-gradient(180deg, #fbfbfe 0%, #f6f7fc 100%);
+    radial-gradient(880px 520px at 10% -5%, #d9edff 0%, rgba(217, 237, 255, 0) 55%),
+    radial-gradient(920px 640px at 108% 110%, #d7e4ff 0%, rgba(215, 228, 255, 0) 55%),
+    radial-gradient(680px 480px at 95% 0%, #e6f2ff 0%, rgba(230, 242, 255, 0) 50%),
+    linear-gradient(180deg, #fbfdff 0%, #f4f7fc 100%);
   background-attachment: fixed;
 }
 
 a { color: inherit; text-decoration: none; }
 code {
   font-family: ui-monospace, monospace;
-  background: #eef0f8;
+  background: #eaf1fb;
   padding: 0.1rem 0.35rem;
   border-radius: 5px;
 }
