@@ -1,0 +1,20 @@
+# Node / frontend
+node_modules/
+frontend/dist/
+*.local
+
+# Go / backend
+backend/deklarant-ai
+backend/deklarant-ai.exe
+backend/main
+backend/main.exe
+
+# Muhit
+.env
+*.log
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
