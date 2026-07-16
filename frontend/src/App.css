@@ -45,30 +45,6 @@
 .badge.on { color: var(--accent); border-color: var(--accent); }
 .badge.off { color: var(--muted); }
 
-/* Tabs */
-.tabs {
-  display: flex;
-  gap: 0.5rem;
-  margin-bottom: 1rem;
-}
-.tabs button {
-  flex: 1;
-  padding: 0.7rem 1rem;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  color: var(--muted);
-  cursor: pointer;
-  font-size: 0.95rem;
-  transition: all 0.15s;
-}
-.tabs button:hover { background: var(--panel-2); }
-.tabs button.active {
-  background: var(--primary);
-  color: white;
-  border-color: var(--primary);
-}
-
 /* Panel */
 .panel {
   background: var(--panel);
@@ -199,8 +175,8 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .chat-full {
   display: flex;
   flex-direction: column;
-  height: calc(100vh - 230px);
-  min-height: 420px;
+  height: calc(100vh - 170px);
+  min-height: 460px;
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 14px;

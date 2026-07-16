@@ -1,33 +1,17 @@
 import { useEffect, useState } from 'react'
 import './App.css'
-import { api, type HSMatch } from './api'
-import HSCodeSearch from './components/HSCodeSearch'
-import DutyCalculator, { type Prefill } from './components/DutyCalculator'
+import { api } from './api'
 import Chat from './components/Chat'
 
-type Tab = 'chat' | 'duty' | 'hscode'
-
 function App() {
-  const [tab, setTab] = useState<Tab>('chat')
   const [aiAvailable, setAiAvailable] = useState(false)
   const [codeCount, setCodeCount] = useState(0)
-  const [prefill, setPrefill] = useState<Prefill | null>(null)
 
   useEffect(() => {
     api.health()
       .then((h) => { setAiAvailable(h.ai_available); setCodeCount(h.codes) })
       .catch(() => { /* backend hali tayyor emas */ })
   }, [])
-
-  function useCodeInCalculator(m: HSMatch) {
-    setPrefill({
-      import_duty: m.code.import_duty,
-      excise: m.code.excise,
-      vat: m.code.vat,
-      name: m.code.name,
-    })
-    setTab('duty')
-  }
 
   return (
     <div className="app">
@@ -47,24 +31,8 @@ function App() {
         </div>
       </header>
 
-      <nav className="tabs">
-        <button className={tab === 'chat' ? 'active' : ''} onClick={() => setTab('chat')}>
-          💬 Chat
-        </button>
-        <button className={tab === 'duty' ? 'active' : ''} onClick={() => setTab('duty')}>
-          🧮 Kalkulyator
-        </button>
-        <button className={tab === 'hscode' ? 'active' : ''} onClick={() => setTab('hscode')}>
-          🔎 HS kod
-        </button>
-      </nav>
-
       <main className="content">
-        {tab === 'chat' && <Chat aiAvailable={aiAvailable} />}
-        {tab === 'duty' && <DutyCalculator prefill={prefill} />}
-        {tab === 'hscode' && (
-          <HSCodeSearch aiAvailable={aiAvailable} onUseCode={useCodeInCalculator} />
-        )}
+        <Chat aiAvailable={aiAvailable} />
       </main>
 
       <footer className="footer">
