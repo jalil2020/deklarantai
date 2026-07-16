@@ -29,7 +29,7 @@ func main() {
 		log.Printf("AI o'chirilgan: ANTHROPIC_API_KEY sozlanmagan (chat ishlamaydi)")
 	}
 
-	chatSvc := chat.New(llmClient)
+	chatSvc := chat.New(llmClient, codes)
 	srv := api.New(codes, chatSvc, llmClient)
 
 	log.Printf("Server ishga tushdi: http://localhost%s", addr)

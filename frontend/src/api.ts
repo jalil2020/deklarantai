@@ -42,9 +42,15 @@ export interface DutyResult {
   total: number
 }
 
+export interface ChatImage {
+  media_type: string // "image/jpeg", "image/png", ...
+  data: string       // base64 (data: prefiksisiz)
+}
+
 export interface ChatMessage {
   role: 'user' | 'assistant'
   content: string
+  images?: ChatImage[]
 }
 
 export interface Health {

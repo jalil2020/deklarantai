@@ -1,10 +1,14 @@
 # 🛃 Deklarant AI
 
-O'zbekiston bojxona rasmiylashtiruvi uchun AI yordamchi. Uch asosiy funksiya:
+O'zbekiston bojxona rasmiylashtiruvi uchun AI yordamchi. Asosiy interfeys — **chat**,
+qo'shimcha strukturaviy vositalar bilan:
 
-1. **TIF TN / HS kod topish** — tovar nomiga qarab tovar nomenklatura kodini aniqlaydi (ixtiyoriy AI izohi bilan).
-2. **Bojxona to'lovlari kalkulyatori** — import boji, aksiz, QQS va bojxona yig'imini hisoblaydi.
-3. **Qonunchilik bo'yicha chat** — bojxona qoidalari va rasmiylashtiruv bo'yicha AI savol-javob (Claude).
+1. **💬 Chat (asosiy)** — bojxona kod, boj va qonunchilik bo'yicha suhbat.
+   **Rasm o'qiydi**: tovar surati yoki invoysni yuklang — AI (Claude vision) undagi tovar,
+   miqdor va narxni o'qib, TIF TN kodini taklif qiladi va bojni hisoblab beradi.
+   Rasm tanlash, nusxa-joylash (paste) yoki sudrab tashlash (drag & drop) mumkin.
+2. **🧮 Kalkulyator** — import boji, aksiz, QQS va bojxona yig'imini aniq hisoblaydi.
+3. **🔎 HS kod** — tovar nomiga qarab TIF TN kodini qidiradi (ixtiyoriy AI izohi bilan).
 
 > ⚠️ **Demo:** Kodlar bazasi va stavkalar namunaviy. Ishlab chiqarishda rasmiy TIF TN
 > jadvali va joriy stavkalar bilan almashtirilishi kerak (manba: [customs.uz](https://customs.uz)).
@@ -33,7 +37,7 @@ Deklarant AI/
 └── frontend/                 # React SPA
     └── src/
         ├── api.ts            # backend klienti
-        └── components/       # HSCodeSearch, DutyCalculator, Chat
+        └── components/       # Chat (rasm yuklash), DutyCalculator, HSCodeSearch
 ```
 
 ## Ishga tushirish
@@ -70,7 +74,7 @@ yo'naltiriladi (Vite proxy).
 | GET   | `/api/health`           | Server holati, AI mavjudligi        |
 | POST  | `/api/hscode/search`    | `{query, use_ai}` → mos kodlar      |
 | POST  | `/api/duty/calculate`   | `{customs_value, import_duty, excise, vat, quantity}` → hisob-kitob |
-| POST  | `/api/chat`             | `{messages: [{role, content}]}` → AI javobi |
+| POST  | `/api/chat`             | `{messages: [{role, content, images?}]}` → AI javobi (rasm: `images:[{media_type, data(base64)}]`) |
 
 ### Namuna: boj hisoblash
 

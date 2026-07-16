@@ -1,4 +1,5 @@
 // Package llm Anthropic Claude Messages API bilan ishlaydigan minimal klient.
+// Matn va rasm (vision) xabarlarini qo'llab-quvvatlaydi.
 package llm
 
 import (
@@ -39,7 +40,7 @@ func New() *Client {
 	return &Client{
 		apiKey: os.Getenv("ANTHROPIC_API_KEY"),
 		model:  model,
-		http:   &http.Client{Timeout: 60 * time.Second},
+		http:   &http.Client{Timeout: 120 * time.Second},
 	}
 }
 
@@ -48,10 +49,17 @@ func (c *Client) Available() bool {
 	return c.apiKey != ""
 }
 
-// Message — suhbat xabari.
+// Image — suhbatga biriktirilgan rasm (base64, "data:" prefiksisiz).
+type Image struct {
+	MediaType string `json:"media_type"` // masalan "image/jpeg", "image/png"
+	Data      string `json:"data"`       // base64 kodlangan tarkib
+}
+
+// Message — suhbat xabari (matn va ixtiyoriy rasmlar).
 type Message struct {
-	Role    string `json:"role"` // "user" yoki "assistant"
-	Content string `json:"content"`
+	Role    string  `json:"role"` // "user" yoki "assistant"
+	Content string  `json:"content"`
+	Images  []Image `json:"images,omitempty"`
 }
 
 type apiRequest struct {
@@ -61,9 +69,26 @@ type apiRequest struct {
 	Messages  []apiMessage `json:"messages"`
 }
 
+// apiMessage.Content matn (string) yoki bloklar ro'yxati (any) bo'lishi mumkin.
 type apiMessage struct {
 	Role    string `json:"role"`
-	Content string `json:"content"`
+	Content any    `json:"content"`
+}
+
+type textBlock struct {
+	Type string `json:"type"` // "text"
+	Text string `json:"text"`
+}
+
+type imageBlock struct {
+	Type   string      `json:"type"` // "image"
+	Source imageSource `json:"source"`
+}
+
+type imageSource struct {
+	Type      string `json:"type"` // "base64"
+	MediaType string `json:"media_type"`
+	Data      string `json:"data"`
 }
 
 type apiResponse struct {
@@ -76,6 +101,29 @@ type apiResponse struct {
 	} `json:"error"`
 }
 
+// buildContent — xabarni API formatiga o'giradi.
+// Rasm bo'lmasa oddiy matn (string), aks holda bloklar ro'yxati qaytariladi.
+func buildContent(m Message) any {
+	if len(m.Images) == 0 {
+		return m.Content
+	}
+	blocks := make([]any, 0, len(m.Images)+1)
+	for _, img := range m.Images {
+		blocks = append(blocks, imageBlock{
+			Type: "image",
+			Source: imageSource{
+				Type:      "base64",
+				MediaType: img.MediaType,
+				Data:      img.Data,
+			},
+		})
+	}
+	if m.Content != "" {
+		blocks = append(blocks, textBlock{Type: "text", Text: m.Content})
+	}
+	return blocks
+}
+
 // Complete — tizim ko'rsatmasi va xabarlar tarixidan javob oladi.
 func (c *Client) Complete(ctx context.Context, system string, history []Message) (string, error) {
 	if !c.Available() {
@@ -84,12 +132,12 @@ func (c *Client) Complete(ctx context.Context, system string, history []Message)
 
 	msgs := make([]apiMessage, 0, len(history))
 	for _, m := range history {
-		msgs = append(msgs, apiMessage{Role: m.Role, Content: m.Content})
+		msgs = append(msgs, apiMessage{Role: m.Role, Content: buildContent(m)})
 	}
 
 	body, err := json.Marshal(apiRequest{
 		Model:     c.model,
-		MaxTokens: 1024,
+		MaxTokens: 2048,
 		System:    system,
 		Messages:  msgs,
 	})
