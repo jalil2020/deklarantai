@@ -9,6 +9,10 @@ backend/deklarant-ai.exe
 backend/main
 backend/main.exe
 
+# Manba bazalari (manba) — ~295 MB, git'ga tushmasin.
+# Bulardan hscodes.json generatsiya qilinadi; faqat natija commit qilinadi.
+backend/data/manba/
+
 # Muhit
 .env
 *.log
