@@ -44,6 +44,9 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		"status":       "ok",
 		"ai_available": s.llm.Available(),
 		"codes":        len(s.codes.All()),
+		// Bazaning kelib chiqishi — foydalanuvchi "nima bor va qachongi holat"
+		// deb so'raganda ko'rsatish uchun.
+		"base": s.codes.Meta(),
 	})
 }
 
@@ -94,7 +97,8 @@ func (s *Server) aiHSComment(ctx context.Context, query string, matches []hscode
 		b.WriteString("(bazada mos kod topilmadi)\n")
 	}
 	for _, m := range matches {
-		b.WriteString(fmt.Sprintf("- %s — %s\n", m.Code.Code, m.Code.Name))
+		b.WriteString(fmt.Sprintf("- %s — %s (boj %g%%, QQS %g%%)\n",
+			m.Code.Code, m.Code.PathUZ, m.Code.ImportDuty, m.Code.VAT))
 	}
 	b.WriteString("\nEng mos TIF TN kodni tavsiya qil va nima uchun ekanligini 2-3 gapda tushuntir. " +
 		"Agar bazada mos kod bo'lmasa, umumiy TIF TN guruhi (birinchi 4 raqam) bo'yicha yo'nalish ber.")

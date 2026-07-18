@@ -1,6 +1,8 @@
-// Package chat bojxona qonunchiligi bo'yicha savol-javob yordamchisini ta'minlaydi.
-// Suhbatga TIF TN bazasi va boj hisoblash metodikasi kiritiladi, shu bilan
-// yordamchi kod topish va to'lov hisoblashni ham suhbat orqali bajaradi.
+// Package chat bojxona bo'yicha savol-javob yordamchisini ta'minlaydi.
+//
+// Retrieval: 13 000+ kodni promptga sig'dirib bo'lmaydi, shuning uchun
+// foydalanuvchining oxirgi savoliga mos kodlar bazadan qidirib topiladi va
+// faqat o'shalar kontekstga qo'shiladi.
 package chat
 
 import (
@@ -12,28 +14,41 @@ import (
 	"deklarant-ai/backend/internal/llm"
 )
 
+// topK — kontekstga qo'shiladigan kodlar soni.
+const topK = 8
+
 const basePrompt = `Sen "Deklarant AI" — O'zbekiston Respublikasi bojxona ishlari bo'yicha yordamchisan.
 
 Vazifang: foydalanuvchilarga bojxona rasmiylashtiruvi bo'yicha yordam berish:
 - Tovar tavsifi yoki RASMI (invoys, tovar surati, hujjat) asosida TIF TN kodini aniqlash.
-- Bojxona to'lovlarini (import boji, aksiz, QQS, bojxona yig'imi) hisoblash.
-- Import/eksport tartiblari va O'zbekiston bojxona qonunchiligi bo'yicha maslahat.
+- Bojxona to'lovlarini hisoblash.
+- Import/eksport tartiblari va qonunchilik bo'yicha maslahat.
 
-Agar foydalanuvchi rasm yuborsa — undagi tovar, miqdor, narx (invoys) kabi ma'lumotlarni
+Agar foydalanuvchi rasm yuborsa — undagi tovar, miqdor, narx kabi ma'lumotlarni
 diqqat bilan o'qib chiq va shularga asoslanib javob ber.
 
-Bojxona to'lovlarini hisoblash metodikasi (ketma-ket):
-  Import boji = Bojxona qiymati × boj%
-  Aksiz      = (Bojxona qiymati + Import boji) × aksiz%
-  QQS        = (Bojxona qiymati + Import boji + Aksiz) × QQS%
-  Bojxona yig'imi ≈ 490 000 so'm (shartli qat'iy summa)
-  Jami       = Bojxona yig'imi + Import boji + Aksiz + QQS
+BOJXONA TO'LOVLARI (GTD kodlari bilan):
+  10. Bojxona yig'imi — bojxona qiymatining dollardagi ekvivalentiga qarab,
+      BRV ning 1 dan 25 karragacha (ПКМ 55, 31.01.2025).
+  12. Ko'rik — ish vaqtida 25% BRV/soat, tashqarida 2×BRV/soat (to'liq soatga yaxlitlanadi).
+  20. Bojxona boji     = bojxona qiymati × boj%
+  21. Qo'shimcha boj   = bojxona qiymati × qo'shimcha%
+  27. Aksiz            = bojxona qiymati × aksiz%   (Soliq kodeksi 285-modda:
+      advalor stavkada baza — bojxona qiymati, bojsiz)
+  29. QQS = (bojxona qiymati + boj + qo'shimcha boj + aksiz) × QQS%
+      (Soliq kodeksi 254-modda. DIQQAT: bojxona yig'imi QQS bazasiga KIRMAYDI.)
+  79. Utilizatsiya yig'imi — avtotransport uchun, netto vazn bo'yicha (alohida qoida).
 
-Qoidalar:
+  Bojxona qiymati = (faktura qiymati + transport xarajati) × valyuta kursi.
+
+QOIDALAR:
 - O'zbek tilida, aniq va lo'nda javob ber (foydalanuvchi boshqa tilda so'rasa, o'sha tilda).
-- Boj hisoblaganda bosqichlarni ko'rsat va yakuniy summani ajratib yoz.
-- Stavkalar va summalar TAXMINIY ekanligini eslat; rasmiy manba: customs.uz, Soliq kodeksi.
-- Bilmagan narsangni to'qib chiqarma. Muhim qarorlar uchun bojxona brokeriga murojaatni tavsiya et.`
+- Agar quyida "TIF TN BAZASIDAN" bloki berilgan bo'lsa — javobingni FAQAT o'shanga
+  asoslantir va ishlatgan kodingni ko'rsat. Blokda mos kod bo'lmasa, buni ochiq ayt
+  va o'z bilimingga tayanayotganingni eslat.
+- Stavkalar baza olingan sanaga tegishli va o'zgarib turadi — muhim qarorlar uchun
+  customs.uz yoki bojxona brokeridan tasdiqlashni tavsiya et.
+- Bilmagan narsangni to'qib chiqarma.`
 
 // Service — chat xizmati.
 type Service struct {
@@ -47,27 +62,81 @@ func New(client *llm.Client, codes *hscode.Store) *Service {
 }
 
 // Available — AI mavjudligini bildiradi.
-func (s *Service) Available() bool {
-	return s.client.Available()
-}
+func (s *Service) Available() bool { return s.client.Available() }
 
-// systemPrompt — baza ma'lumotlari bilan to'ldirilgan tizim ko'rsatmasi.
+// systemPrompt — barqaror tizim ko'rsatmasi.
+// Kodlar bu yerga QO'SHILMAYDI — ular so'rovga qarab kontekstga qo'shiladi,
+// shu tufayli prompt keshi buzilmaydi.
 func (s *Service) systemPrompt() string {
-	if s.codes == nil || len(s.codes.All()) == 0 {
+	if s.codes == nil {
 		return basePrompt
 	}
-	var b strings.Builder
-	b.WriteString(basePrompt)
-	b.WriteString("\n\nMa'lumot uchun mavjud TIF TN kodlari (namunaviy stavkalar bilan):\n")
-	for _, c := range s.codes.All() {
-		b.WriteString(fmt.Sprintf("- %s | %s | boj %.0f%%, aksiz %.0f%%, QQS %.0f%% | %s\n",
-			c.Code, c.Name, c.ImportDuty, c.Excise, c.VAT, c.Unit))
-	}
-	b.WriteString("\nRo'yxatda mos kod bo'lmasa, umumiy bilimingga tayanib TIF TN guruhini (birinchi 4-6 raqam) taklif qil.")
-	return b.String()
+	m := s.codes.Meta()
+	return basePrompt + fmt.Sprintf(`
+
+QO'LINGDAGI BAZA:
+  Nomenklatura : %s (%d ta kod)
+  Huquqiy asos : %s
+  Stavkalar    : %s holatiga
+Foydalanuvchi "nimalarni bilasan" deb so'rasa, shu ma'lumotni ayt.`,
+		m.Nomenclature, m.TotalCodes, m.LegalBasis, m.RatesAsOf)
 }
 
 // Reply — suhbat tarixiga javob qaytaradi.
 func (s *Service) Reply(ctx context.Context, history []llm.Message) (string, error) {
-	return s.client.Complete(ctx, s.systemPrompt(), history)
+	return s.client.Complete(ctx, s.systemPrompt(), s.withRetrieval(history))
+}
+
+// withRetrieval — oxirgi foydalanuvchi savoliga mos kodlarni topib, uning
+// matniga qo'shib qo'yadi. Asl tarix o'zgartirilmaydi.
+func (s *Service) withRetrieval(history []llm.Message) []llm.Message {
+	if s.codes == nil || len(history) == 0 {
+		return history
+	}
+	last := history[len(history)-1]
+	if last.Role != "user" || strings.TrimSpace(last.Content) == "" {
+		return history // rasm-only xabar yoki bo'sh — qidiradigan narsa yo'q
+	}
+
+	matches := s.codes.Search(last.Content, topK)
+	if len(matches) == 0 {
+		return history
+	}
+
+	out := make([]llm.Message, len(history))
+	copy(out, history)
+	out[len(out)-1].Content = last.Content + "\n\n" + formatMatches(s.codes.Meta(), matches)
+	return out
+}
+
+// formatMatches — topilgan kodlarni kontekst bloki sifatida shakllantiradi.
+func formatMatches(m hscode.Meta, matches []hscode.Match) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "<TIF_TN_BAZASIDAN>\nSavolga mos kodlar (%s, stavkalar %s holatiga):\n\n",
+		m.Nomenclature, m.RatesAsOf)
+	for _, mt := range matches {
+		c := mt.Code
+		fmt.Fprintf(&b, "%s — %s\n", formatCode(c.Code), c.PathUZ)
+		fmt.Fprintf(&b, "   boj %g%% | QQS %g%%", c.ImportDuty, c.VAT)
+		if c.Excise > 0 {
+			fmt.Fprintf(&b, " | aksiz %g%%", c.Excise)
+		}
+		if c.ExportDuty > 0 {
+			fmt.Fprintf(&b, " | eksport boji %g%%", c.ExportDuty)
+		}
+		if c.Unit != "" {
+			fmt.Fprintf(&b, " | qo'shimcha o'lchov: %s", c.Unit)
+		}
+		b.WriteString("\n")
+	}
+	b.WriteString("</TIF_TN_BAZASIDAN>")
+	return b.String()
+}
+
+// formatCode — "8701211019" → "8701 21 101 9".
+func formatCode(c string) string {
+	if len(c) != 10 {
+		return c
+	}
+	return c[0:4] + " " + c[4:6] + " " + c[6:9] + " " + c[9:]
 }

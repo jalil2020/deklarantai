@@ -40,6 +40,32 @@ Deklarant AI/
         └── components/       # Chat (rasm yuklash), DutyCalculator, HSCodeSearch
 ```
 
+## Ma'lumotlar bazasi (TIF TN)
+
+`backend/data/hscodes.json` — **13 142 ta** to'liq 10 xonali kod, o'zbekcha va
+ruscha ierarxik tavsif, stavkalar bilan. Bu fayl **generatsiya qilinadi**:
+
+```bash
+node tools/extract-hscodes.mjs --date=2026-07-19
+```
+
+Manba: `backend/data/manba/{help,info}.sqlite` (manba baza,
+~295 MB, `.gitignore` da — git'ga tushmaydi). Ekstraktor:
+
+- `good` daraxtini rekursiv aylanib to'liq tavsif yig'adi
+- kodlangan stavka maydonlarini (`[qonun|dan|gacha|foiz|…]`) ochadi va
+  `--date` sanasiga amal qiluvchi versiyani tanlaydi
+- kirill o'zbekchani lotinga o'giradi (`tools/translit.mjs`)
+- bazadagi ikkita bo'lim raqami xatosini tuzatadi (VII→VIII, XII→XIII)
+
+**Huquqiy asos:** TIF TN 2025 — ПКМ № 181 (14.05.2025), 01.06.2025 dan amalda.
+O'tish jadvali — ПКМ № 349 (04.06.2025). Xalqaro asos — Garmonizatsiyalangan
+tizim konventsiyasi (Bryussel, 14.06.1983).
+
+> ⚠️ Kodlar va stavkalar muntazam o'zgaradi. `meta.rates_as_of` va
+> `meta.extracted_at` maydonlari ma'lumot qaysi holatga tegishli ekanini
+> ko'rsatadi; `GET /api/health` ularni qaytaradi.
+
 ## Ishga tushirish
 
 ### 1. Backend (Go)
