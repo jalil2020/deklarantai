@@ -12,19 +12,21 @@ import (
 	"deklarant-ai/backend/internal/chat"
 	"deklarant-ai/backend/internal/duty"
 	"deklarant-ai/backend/internal/hscode"
+	"deklarant-ai/backend/internal/laws"
 	"deklarant-ai/backend/internal/llm"
 )
 
 // Server — barcha bog'liqliklarni ushlab turadi.
 type Server struct {
 	codes *hscode.Store
+	laws  *laws.Store // nil bo'lishi mumkin
 	chat  *chat.Service
 	llm   *llm.Client
 }
 
 // New — server yaratadi.
-func New(codes *hscode.Store, chatSvc *chat.Service, llmClient *llm.Client) *Server {
-	return &Server{codes: codes, chat: chatSvc, llm: llmClient}
+func New(codes *hscode.Store, lawStore *laws.Store, chatSvc *chat.Service, llmClient *llm.Client) *Server {
+	return &Server{codes: codes, laws: lawStore, chat: chatSvc, llm: llmClient}
 }
 
 // Routes — barcha marshrutlarni ro'yxatdan o'tkazadi.
@@ -40,14 +42,18 @@ func (s *Server) Routes() http.Handler {
 // ---- Health ----
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{
+	out := map[string]any{
 		"status":       "ok",
 		"ai_available": s.llm.Available(),
 		"codes":        len(s.codes.All()),
 		// Bazaning kelib chiqishi — foydalanuvchi "nima bor va qachongi holat"
 		// deb so'raganda ko'rsatish uchun.
 		"base": s.codes.Meta(),
-	})
+	}
+	if s.laws != nil {
+		out["laws"] = s.laws.Meta()
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 // ---- HS kod qidirish ----

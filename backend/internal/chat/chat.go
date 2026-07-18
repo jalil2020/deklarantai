@@ -11,11 +11,16 @@ import (
 	"strings"
 
 	"deklarant-ai/backend/internal/hscode"
+	"deklarant-ai/backend/internal/laws"
 	"deklarant-ai/backend/internal/llm"
 )
 
-// topK — kontekstga qo'shiladigan kodlar soni.
-const topK = 8
+const (
+	// topCodes — kontekstga qo'shiladigan TIF TN kodlari soni.
+	topCodes = 8
+	// topLaws — qonun parchalari soni. Ular yirik (~4 KB), shuning uchun kam.
+	topLaws = 3
+)
 
 const basePrompt = `Sen "Deklarant AI" — O'zbekiston Respublikasi bojxona ishlari bo'yicha yordamchisan.
 
@@ -43,9 +48,13 @@ BOJXONA TO'LOVLARI (GTD kodlari bilan):
 
 QOIDALAR:
 - O'zbek tilida, aniq va lo'nda javob ber (foydalanuvchi boshqa tilda so'rasa, o'sha tilda).
-- Agar quyida "TIF TN BAZASIDAN" bloki berilgan bo'lsa — javobingni FAQAT o'shanga
-  asoslantir va ishlatgan kodingni ko'rsat. Blokda mos kod bo'lmasa, buni ochiq ayt
-  va o'z bilimingga tayanayotganingni eslat.
+- Savolga qo'shib "TIF TN BAZASIDAN" va "QONUNCHILIKDAN" bloklari berilishi mumkin.
+  Ular — bizning bazamizdan topilgan haqiqiy ma'lumot. Javobingni AVVALO o'shalarga
+  asoslantir: ishlatgan kodingni va qonun moddasini ko'rsat
+  (masalan: "Bojxona kodeksi, 346-modda").
+- Bloklarda javob bo'lmasa — buni ochiq ayt ("bazada bu haqda ma'lumot topilmadi")
+  va o'z bilimingga tayanayotganingni eslat. Blokdagi ma'lumotni o'ylab topilgan
+  modda raqami bilan to'ldirma.
 - Stavkalar baza olingan sanaga tegishli va o'zgarib turadi — muhim qarorlar uchun
   customs.uz yoki bojxona brokeridan tasdiqlashni tavsiya et.
 - Bilmagan narsangni to'qib chiqarma.`
@@ -54,11 +63,12 @@ QOIDALAR:
 type Service struct {
 	client *llm.Client
 	codes  *hscode.Store
+	laws   *laws.Store // ixtiyoriy; nil bo'lsa qonun konteksti qo'shilmaydi
 }
 
-// New — LLM klienti va TIF TN bazasi asosida xizmat yaratadi.
-func New(client *llm.Client, codes *hscode.Store) *Service {
-	return &Service{client: client, codes: codes}
+// New — LLM klienti, TIF TN bazasi va qonun korpusi asosida xizmat yaratadi.
+func New(client *llm.Client, codes *hscode.Store, lawStore *laws.Store) *Service {
+	return &Service{client: client, codes: codes, laws: lawStore}
 }
 
 // Available — AI mavjudligini bildiradi.
@@ -72,14 +82,25 @@ func (s *Service) systemPrompt() string {
 		return basePrompt
 	}
 	m := s.codes.Meta()
-	return basePrompt + fmt.Sprintf(`
+	var b strings.Builder
+	b.WriteString(basePrompt)
+	fmt.Fprintf(&b, `
 
 QO'LINGDAGI BAZA:
   Nomenklatura : %s (%d ta kod)
   Huquqiy asos : %s
-  Stavkalar    : %s holatiga
-Foydalanuvchi "nimalarni bilasan" deb so'rasa, shu ma'lumotni ayt.`,
+  Stavkalar    : %s holatiga`,
 		m.Nomenclature, m.TotalCodes, m.LegalBasis, m.RatesAsOf)
+
+	if s.laws != nil {
+		lm := s.laws.Meta()
+		fmt.Fprintf(&b, `
+  Qonunchilik  : %d ta hujjatdan %d parcha (Bojxona kodeksi to'liq;
+                 Soliq, Ma'muriy va Jinoyat kodekslaridan bojxonaga oid moddalar)`,
+			lm.Docs, lm.Chunks)
+	}
+	b.WriteString("\nFoydalanuvchi \"nimalarni bilasan\" deb so'rasa, shu ma'lumotni ayt.")
+	return b.String()
 }
 
 // Reply — suhbat tarixiga javob qaytaradi.
@@ -87,10 +108,11 @@ func (s *Service) Reply(ctx context.Context, history []llm.Message) (string, err
 	return s.client.Complete(ctx, s.systemPrompt(), s.withRetrieval(history))
 }
 
-// withRetrieval — oxirgi foydalanuvchi savoliga mos kodlarni topib, uning
-// matniga qo'shib qo'yadi. Asl tarix o'zgartirilmaydi.
+// withRetrieval — oxirgi foydalanuvchi savoliga mos TIF TN kodlari va qonun
+// parchalarini topib, uning matniga qo'shib qo'yadi.
+// Asl tarix o'zgartirilmaydi (nusxa qaytariladi).
 func (s *Service) withRetrieval(history []llm.Message) []llm.Message {
-	if s.codes == nil || len(history) == 0 {
+	if len(history) == 0 {
 		return history
 	}
 	last := history[len(history)-1]
@@ -98,15 +120,41 @@ func (s *Service) withRetrieval(history []llm.Message) []llm.Message {
 		return history // rasm-only xabar yoki bo'sh — qidiradigan narsa yo'q
 	}
 
-	matches := s.codes.Search(last.Content, topK)
-	if len(matches) == 0 {
+	var blocks []string
+	if s.codes != nil {
+		if m := s.codes.Search(last.Content, topCodes); len(m) > 0 {
+			blocks = append(blocks, formatMatches(s.codes.Meta(), m))
+		}
+	}
+	if s.laws != nil {
+		if m := s.laws.Search(last.Content, topLaws); len(m) > 0 {
+			blocks = append(blocks, formatLaws(m))
+		}
+	}
+	if len(blocks) == 0 {
 		return history
 	}
 
 	out := make([]llm.Message, len(history))
 	copy(out, history)
-	out[len(out)-1].Content = last.Content + "\n\n" + formatMatches(s.codes.Meta(), matches)
+	out[len(out)-1].Content = last.Content + "\n\n" + strings.Join(blocks, "\n\n")
 	return out
+}
+
+// formatLaws — topilgan qonun parchalarini kontekst bloki sifatida shakllantiradi.
+func formatLaws(matches []laws.Match) string {
+	var b strings.Builder
+	b.WriteString("<QONUNCHILIKDAN>\n")
+	for _, m := range matches {
+		c := m.Chunk
+		fmt.Fprintf(&b, "\n— Manba: %s", c.Name)
+		if c.Date != "" {
+			fmt.Fprintf(&b, " (%s)", c.Date)
+		}
+		fmt.Fprintf(&b, "\n  %s\n%s\n", c.Title, c.Text)
+	}
+	b.WriteString("</QONUNCHILIKDAN>")
+	return b.String()
 }
 
 // formatMatches — topilgan kodlarni kontekst bloki sifatida shakllantiradi.

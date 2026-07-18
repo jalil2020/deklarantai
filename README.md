@@ -66,6 +66,30 @@ tizim konventsiyasi (Bryussel, 14.06.1983).
 > `meta.extracted_at` maydonlari ma'lumot qaysi holatga tegishli ekanini
 > ko'rsatadi; `GET /api/health` ularni qaytaradi.
 
+## Qonun korpusi (RAG)
+
+`backend/data/laws.json` — **1 129 parcha, 107 hujjatdan** (4,2 MB). Generatsiya:
+
+```bash
+node tools/extract-laws.mjs [--dry]
+```
+
+To'liq korpus ~590 MB, shuning uchun tanlab olinadi:
+
+| Nima | Qanday |
+|------|--------|
+| Bojxona kodeksi, stavka qarorlari (ПКМ 55/181/349/358) | **to'liq** |
+| Soliq, Ma'muriy, Jinoyat kodekslari + 99 ta hujjat | faqat **bojxonaga oid moddalar** |
+
+Parchalash — moddalar bo'yicha (`N-modda`), 4000 belgidan uzunlari bo'linadi.
+Matn **rasmiy o'zbekcha** versiyadan olinadi (ruschasi ayrim hujjatlarda mashina
+tarjimasi bo'lib, yuridik kuchga ega emas) va lotinga transliteratsiya qilinadi.
+
+Chat har bir savolga bazadan **top-8 TIF TN kod** va **top-3 qonun parchasi**
+topib qo'shadi — butun baza promptga tashlanmaydi, shu sababli prompt keshi
+buzilmaydi. Qidiruv o'zbek tilining qo'shimchalarini hisobga oladi
+(`vaqtinchalik` → `vaqtincha`) va kam uchraydigan so'zga ko'proq vazn beradi (IDF).
+
 ## Ishga tushirish
 
 ### 1. Backend (Go)
