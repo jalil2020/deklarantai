@@ -151,6 +151,9 @@ func formatLaws(matches []laws.Match) string {
 		if c.Date != "" {
 			fmt.Fprintf(&b, " (%s)", c.Date)
 		}
+		if c.Since != "" {
+			fmt.Fprintf(&b, ", %s dan amalda", c.Since)
+		}
 		fmt.Fprintf(&b, "\n  %s\n%s\n", c.Title, c.Text)
 	}
 	b.WriteString("</QONUNCHILIKDAN>")

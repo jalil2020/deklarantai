@@ -78,8 +78,16 @@ To'liq korpus ~590 MB, shuning uchun tanlab olinadi:
 
 | Nima | Qanday |
 |------|--------|
-| Bojxona kodeksi, stavka qarorlari (ПКМ 55/181/349/358) | **to'liq** |
-| Soliq, Ma'muriy, Jinoyat kodekslari + 99 ta hujjat | faqat **bojxonaga oid moddalar** |
+| Bojxona kodeksi, ПКМ 55 (yig'im), ПКМ 347/358 (utilizatsiya) | **to'liq** |
+| Soliq, Ma'muriy, Jinoyat kodekslari + 83 ta hujjat | faqat **bojxonaga oid moddalar** |
+| **Bekor qilingan hujjatlar** (`DateFinish` o'tgan) | **chiqariladi** — 388 ta |
+
+> ⚠️ TIF TN ni tasdiqlagan **ПКМ 181** va o'tish jadvali **ПКМ 349** matnlari
+> manba bazada yo'q (`IsLoad=0`), shuning uchun korpusga kirmagan.
+
+Bekor qilinganlarni chiqarish muhim: yig'im stavkalari bo'yicha **bir xil nomli
+ikkita qaror** bor — ПКМ 700 (2020, 2025-05-04 da bekor qilingan) va ПКМ 55
+(2025). Ikkalasi ham korpusda qolsa, RAG eskirgan stavkani qaytarishi mumkin.
 
 Parchalash — moddalar bo'yicha (`N-modda`), 4000 belgidan uzunlari bo'linadi.
 Matn **rasmiy o'zbekcha** versiyadan olinadi (ruschasi ayrim hujjatlarda mashina

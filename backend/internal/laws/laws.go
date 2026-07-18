@@ -23,6 +23,11 @@ type Meta struct {
 	Chunks      int    `json:"chunks"`
 	ExtractedAt string `json:"extracted_at"`
 	Note        string `json:"note,omitempty"`
+
+	// ExpiredExcluded — korpusdan chiqarilgan bekor qilingan hujjatlar soni.
+	// Bu muhim: eskirgan qonun korpusda qolsa, RAG eskirgan stavkani
+	// qaytarishi va AI uni ishonch bilan aytishi mumkin.
+	ExpiredExcluded int `json:"expired_excluded,omitempty"`
 }
 
 // Chunk — qonunning bitta parchasi (odatda bitta modda).
@@ -30,6 +35,7 @@ type Chunk struct {
 	Doc   int    `json:"doc"`   // laws.id — manba hujjat
 	Name  string `json:"name"`  // hujjat nomi (ruscha — bazada shunday saqlanadi)
 	Date  string `json:"date"`  // hujjat sanasi
+	Since string `json:"since"` // amal qilish boshlangan sana
 	Title string `json:"title"` // modda sarlavhasi
 	Text  string `json:"text"`  // parcha matni
 	Lang  string `json:"lang"`  // "uz" (lotinlashtirilgan) yoki "ru"

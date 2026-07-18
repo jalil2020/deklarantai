@@ -121,15 +121,27 @@ function splitLong({ title, text }) {
 
 const db = new DatabaseSync(SRC, { readOnly: true })
 const rows = db.prepare(`
-  SELECT id, doc_id, doc_date, doc_name, doc_text, doc_text_uzb
+  SELECT id, doc_id, doc_date, doc_name, doc_text, doc_text_uzb, DateStart, DateFinish
   FROM laws WHERE length(doc_text) > 500`).all()
 
 const chunks = []
-const stats = { core: 0, partial: 0, keyword: 0, skipped: 0, uz: 0, ru: 0 }
+const stats = { core: 0, partial: 0, keyword: 0, skipped: 0, expired: 0, uz: 0, ru: 0 }
+const coreHits = new Map(CORE.map((re) => [String(re), 0]))
+const NOW = new Date()
 
 for (const r of rows) {
   const name = r.doc_name || ''
-  const isCore = CORE.some((re) => re.test(name))
+
+  // Bekor qilingan hujjatlarni tashlaymiz. Bu MUHIM: masalan yig'im
+  // stavkalari bo'yicha ikkita bir xil nomli qaror bor — ПКМ 700 (2020,
+  // 2025-05-04 da bekor qilingan) va ПКМ 55 (2025). Ikkalasini ham
+  // korpusga qo'ysak, RAG eskirgan stavkalarni qaytarishi mumkin.
+  const finish = r.DateFinish ? new Date(r.DateFinish) : null
+  if (finish && !isNaN(finish) && finish < NOW) { stats.expired++; continue }
+
+  const matchedCore = CORE.filter((re) => re.test(name))
+  for (const re of matchedCore) coreHits.set(String(re), coreHits.get(String(re)) + 1)
+  const isCore = matchedCore.length > 0
   const isPartial = PARTIAL.some((re) => re.test(name))
   const isKeyword = TOPIC.test(name)
   if (!isCore && !isPartial && !isKeyword) { stats.skipped++; continue }
@@ -148,6 +160,8 @@ for (const r of rows) {
     if (!isCore && !TOPIC.test(c.text)) continue
     chunks.push({
       doc: r.id,
+      // Amal qilish boshlanishi — AI javobda "qaysi paytdan" deyishi uchun.
+      since: r.DateStart ? String(r.DateStart).slice(0, 10) : null,
       // Hujjat nomi bazada FAQAT ruscha saqlanadi — uni lotinga o'girish
       // ma'nosiz natija beradi ("Kodeks Respubliki..."), shuning uchun
       // asl holida qoldiriladi. Matn esa o'zbekchadan o'giriladi.
@@ -166,7 +180,15 @@ const bytes = Buffer.byteLength(JSON.stringify(chunks))
 const mb = (b) => (b / 1024 / 1024).toFixed(1)
 
 console.log(`Hujjatlar : core ${stats.core}, qisman ${stats.partial}, kalit so'z ${stats.keyword}`)
-console.log(`            (tashlab yuborilgan: ${stats.skipped}, o'zbekcha ${stats.uz} / ruscha ${stats.ru})`)
+console.log(`            (mavzuga kirmagan: ${stats.skipped}, BEKOR QILINGAN: ${stats.expired},`)
+console.log(`             o'zbekcha ${stats.uz} / ruscha ${stats.ru})`)
+
+// CORE naqshlari jim qolib ketmasligi kerak — mos kelmasa ogohlantiramiz.
+const dead = [...coreHits].filter(([, n]) => n === 0).map(([re]) => re)
+if (dead.length) {
+  console.log(`\n⚠️  CORE naqshlari hech narsa topmadi (matni bazada yo'q):`)
+  for (const re of dead) console.log(`     ${re}`)
+}
 console.log(`Parchalar : ${chunks.length.toLocaleString('ru-RU')}`)
 console.log(`Hajm      : ${mb(bytes)} MB`)
 console.log(`O'rtacha  : ${Math.round(bytes / chunks.length)} bayt/parcha`)
@@ -177,8 +199,12 @@ const out = {
   meta: {
     source: 'ichki manba baza',
     script: "lotin (rasmiy kirill matndan transliteratsiya qilingan)",
-    selection: 'Bojxona kodeksi va stavka qarorlari to\'liq; Soliq/Ma\'muriy/Jinoyat '
-      + 'kodekslari va boshqa hujjatlardan faqat bojxonaga oid moddalar.',
+    selection: 'Bojxona kodeksi, ПКМ 55 (yig\'im stavkalari), ПКМ 347/358 '
+      + '(utilizatsiya yig\'imi) to\'liq; Soliq/Ma\'muriy/Jinoyat kodekslari va '
+      + 'boshqa hujjatlardan faqat bojxonaga oid moddalar. '
+      + 'DIQQAT: TIF TN ni tasdiqlagan ПКМ 181 va o\'tish jadvali ПКМ 349 '
+      + 'matnlari manba bazada yo\'q, shuning uchun korpusga kirmagan.',
+    expired_excluded: stats.expired,
     chunking: 'Moddalar bo\'yicha ("N-modda"), 4000 belgidan uzunlari bo\'lingan.',
     docs: stats.core + stats.partial + stats.keyword,
     chunks: chunks.length,
