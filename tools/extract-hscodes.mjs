@@ -34,25 +34,45 @@ function parseDate(s) {
 
 /**
  * Stavka maydonini o'qiydi: "[qonun|boshlanish|tugash|foiz|...][...]"
- * Bir nechta blokdan ON sanasiga amal qilganini tanlaydi.
- * Qaytaradi: { percent, law, extra[] } yoki null.
+ *
+ * Bir nechta blok ON sanasiga BIR VAQTDA amal qilishi mumkin — masalan
+ * bosqichma-bosqich oshirilayotgan tarifda:
+ *   [326|01.07.2025||10|…][326|01.01.2026||20|…][326|01.01.2028||30|…]
+ * Bu yerda 2026-07-19 sanasida birinchi ikkitasi ham "amalda" (tugash
+ * sanasi yo'q), lekin ustun bo'lgani — KEYINGI qabul qilingani, ya'ni 20%.
+ * Shuning uchun eng kech boshlangan mos blok tanlanadi.
+ *
+ * Qaytaradi: { percent, law, extra[], since } yoki null.
  */
+// Bir vaqtda bir nechta blok amal qilgan holatlar soni — diagnostika uchun.
+// Bu holat jimgina noto'g'ri stavka berishi mumkin, shuning uchun ko'rinib tursin.
+let overlapping = 0
+
 function parseRate(raw) {
   if (!raw) return null
+  let best = null
+  let bestStart = null
+  let applicable = 0
   for (const m of String(raw).matchAll(/\[([^\]]*)\]/g)) {
     const f = m[1].split('|')
     const start = parseDate(f[1])
     const finish = parseDate(f[2])
     if (start && ON < start) continue
     if (finish && ON > finish) continue
+    applicable++
+    if (applicable === 2) overlapping++
+    // Sanasi yo'q blok eng quyi ustuvorlikda (bestStart = null).
+    if (best && bestStart && (!start || start <= bestStart)) continue
     const pct = (f[3] ?? '').trim().replace(',', '.')
-    return {
+    best = {
       percent: pct === '' ? 0 : Number(pct),
       law: (f[0] ?? '').trim() || null,
       extra: f.slice(4).map((x) => x.trim()).filter(Boolean),
+      since: f[1]?.trim() || null,
     }
+    bestStart = start
   }
-  return null
+  return best
 }
 
 /** Rim raqami (1..21). Bo'lim nomlarini tuzatish uchun. */
@@ -199,7 +219,9 @@ if (fixes.length) {
 if (missingUz.length)
   console.log(`\n⚠️  O'zbekcha nomi yo'q birliklar: ${missingUz.join(', ')}`)
 console.log(`\n   qo'shimcha o'lchovsiz (faqat kg): ${stats.noUnit}`
-  + `   bojsiz: ${stats.noDuty}   QQSsiz: ${stats.noVat}   end=1: ${stats.endFlag}`)
+  + `   bojsiz: ${stats.noDuty}   QQSsiz: ${stats.noVat}`)
+console.log(`   bir vaqtda >1 stavka bloki amal qilgan holatlar: ${overlapping}`
+  + ` (eng kech boshlangani olindi)`)
 
 const sample = codes.find((c) => c.code === '8701211019') ?? codes[0]
 console.log('\n   Namuna:')
