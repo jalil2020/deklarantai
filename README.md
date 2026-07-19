@@ -264,6 +264,15 @@ Bular bilib turib qoldirilgan — ishlatishdan oldin hisobga olish kerak.
 
 **Ma'lumotda:**
 
+- [ ] **QQS kodga xos emas.** Manba bazada `nds` maydoni 20 929 yozuvning
+      hammasida bir xil (`[|01.01.2023 ||12]`), ya'ni 12% — umumiy stavka,
+      kodga qarab aniqlangan qiymat emas. Import qilinganda ozod qilish
+      holatlari bor (Soliq kodeksi 246-modda, ПКМ 352 va h.k.).
+      **3 856 kod (29%)** imtiyoz qoidasiga tushadi: 1 287 tasi QQS dan,
+      2 520 tasi bojdan ozod bo'lishi mumkin. Imtiyoz SHARTLI ("yuridik
+      shaxslar tomonidan", "ro'yxatga kiritilgan bo'lsa"), shuning uchun
+      stavka avtomatik 0 qilinmaydi — chat stavka yonida imtiyoz borligini
+      ogohlantiradi va shartini so'raydi.
 - [ ] **Aksiz stavkalari TIF TN kodiga bog'lanmagan** va bog'lab bo'lmaydi:
       Soliq kodeksi 289¹–289³-moddalari stavkalarni TOVAR NOMI bo'yicha
       beradi. 13 142 kodning birontasida aksiz yo'q (`excise` maydoni umuman

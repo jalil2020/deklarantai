@@ -200,6 +200,16 @@ const out = {
     // Boj stavkalarining asosi: ПП-3818, 1-ilova (import boji stavkalari).
     duty_rates_basis: 'ПП-3818 (29.06.2018), 1-ilova',
     duty_rates_lex: 'https://lex.uz/docs/3802366',
+    // QQS manba bazada KODGA XOS emas: "nds" maydoni 20 929 yozuvning
+    // hammasida bir xil ("[|01.01.2023 ||12]"), ya'ni umumiy stavka.
+    // Import qilinganda ozod qilinadigan tovarlar bor — SK 246-modda va
+    // alohida qarorlar (ПКМ 352 va h.k.), ular docs.json da "imtiyoz"
+    // bo'limida. 13 142 koddan 1 287 tasi QQS dan, 2 520 tasi bojdan ozod
+    // bo'lishi mumkin, lekin imtiyoz SHARTLI — shu sababli stavka bu yerda
+    // o'zgartirilmaydi, chat esa imtiyoz borligini ogohlantiradi.
+    vat_note: 'QQS — umumiy stavka (12%), kodga xos aniqlangan qiymat emas. ' +
+      'Import qilinganda ozod qilish holatlari: Soliq kodeksi 246-modda va ' +
+      'alohida qarorlar. Imtiyoz qoidalari docs.json da.',
     transition_list: 'ПКМ № 349 (04.06.2025) — kodlar o\'zgarishi ro\'yxati',
     international_basis: 'Garmonizatsiyalangan tizim konventsiyasi (Bryussel, 14.06.1983)',
     rates_as_of: ON.toISOString().slice(0, 10),

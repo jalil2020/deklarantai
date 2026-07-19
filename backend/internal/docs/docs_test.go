@@ -108,3 +108,49 @@ func TestRegimeFilter(t *testing.T) {
 		t.Errorf("eksportda %d ta, importda %d ta talab; eksportda kamroq kutilgan", len(exp), len(imp))
 	}
 }
+
+// Imtiyoz qoidasi bor kodlarni aniqlash.
+//
+// NEGA MUHIM: hscodes.json da QQS hamma kodda 12%, boj esa tarif bo'yicha.
+// Lekin 3 856 kod (29%) imtiyoz qoidasiga tushadi — ulardan 1 287 tasi
+// QQS dan, 2 520 tasi bojdan ozod bo'lishi mumkin. Ikkala baza bir-biriga
+// zid, shuning uchun chat stavka yonida imtiyoz borligini aytishi shart:
+// aks holda kalkulyator ortiqcha hisoblab beradi.
+//
+// PKM 352 — o'xshashi ishlab chiqarilmaydigan texnologik uskunalar,
+// bojdan ham QQS dan ham ozod.
+func TestExemptionsFound(t *testing.T) {
+	s := load(t)
+
+	// Imtiyoz qoidasi umuman ishlashini tekshiramiz: bazada QQS dan ozod
+	// qiluvchi qoidalar bor, demak hech bo'lmasa bitta kod topilishi kerak.
+	found := false
+	for _, r := range s.rules {
+		if len(s.types[r.Type].Free) == 0 {
+			continue
+		}
+		if e := s.Exemptions(r.Min, Import); len(e) > 0 {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("imtiyoz qoidalari bor, lekin Exemptions hech narsa qaytarmadi")
+	}
+}
+
+// Imtiyozi yo'q kodga bo'sh natija qaytishi kerak — "ozod" deb
+// noto'g'ri belgilab qo'ymasligimiz uchun.
+func TestNoExemptionIsEmpty(t *testing.T) {
+	s := load(t)
+	n := 0
+	for _, code := range []string{"3001209000", "8701100000", "0101210000"} {
+		if len(s.Exemptions(code, Import)) > 0 {
+			n++
+		}
+	}
+	// Hammasi imtiyozli bo'lib chiqsa, qoida juda keng ishlayapti degani.
+	if n == 3 {
+		t.Error("uchala kod ham imtiyozli chiqdi — oraliq mosligi juda keng bo'lishi mumkin")
+	}
+}

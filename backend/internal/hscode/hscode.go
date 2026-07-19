@@ -29,7 +29,13 @@ type Meta struct {
 
 	// ExciseNote — aksiz bu bazada YO'Qligini tushuntiradi.
 	// ExciseKnownCodes — stavkasi ma'lum bo'lgan kodlar soni (hozircha 0).
-	ExciseNote       string `json:"excise_note,omitempty"`
+	ExciseNote string `json:"excise_note,omitempty"`
+
+	// VATNote — QQS kodga xos emas, umumiy stavka ekanini tushuntiradi.
+	// Manba bazada "nds" maydoni hamma yozuvda bir xil, ya'ni imtiyozlar
+	// bu yerda aks etmagan.
+	VATNote string `json:"vat_note,omitempty"`
+
 	ExciseKnownCodes int    `json:"excise_known_codes"`
 }
 

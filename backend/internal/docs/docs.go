@@ -93,6 +93,37 @@ func Load(path string) (*Store, error) {
 // Meta — korpus haqidagi ma'lumot.
 func (s *Store) Meta() Meta { return s.meta }
 
+// Exemptions — kod uchun QAYSI to'lovlardan imtiyoz bo'lishi MUMKINligini
+// qaytaradi ("boj", "aksiz", "qqs", "yigim"). Bo'sh bo'lsa — imtiyoz qoidasi
+// topilmadi.
+//
+// DIQQAT: bu "ozod qilinadi" degani EMAS, "ozod qilinishi mumkin" degani.
+// Imtiyozlar shartli: "yuridik shaxslar tomonidan olib kirilganda",
+// "ro'yxatga kiritilgan bo'lsa", "ishlab chiqarish uchun" va h.k. Shartni
+// tovar va importchi holatiga qarab odam tekshiradi. Shuning uchun stavkani
+// bu yerda 0 qilib qo'ymaymiz — faqat imkoniyatni bildiramiz.
+func (s *Store) Exemptions(code, regime string) []string {
+	code = normalizeCode(code)
+	if code == "" {
+		return nil
+	}
+	seen := map[string]bool{}
+	var out []string
+	for _, r := range s.rules {
+		if r.Min > code || r.Max < code || !applies(r, regime) {
+			continue
+		}
+		for _, f := range s.types[r.Type].Free {
+			if !seen[f] {
+				seen[f] = true
+				out = append(out, f)
+			}
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
 // Len — qoidalar soni.
 func (s *Store) Len() int { return len(s.rules) }
 

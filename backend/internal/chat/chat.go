@@ -67,6 +67,19 @@ QOIDALAR:
   va o'z bilimingga tayanayotganingni eslat. Blokdagi ma'lumotni o'ylab topilgan
   modda raqami bilan to'ldirma.
 
+⚠️ QQS VA IMTIYOZLAR HAQIDA:
+  TIF TN bazasida QQS hamma kodda 12% deb turadi — bu UMUMIY stavka,
+  kodga xos aniqlangan qiymat EMAS (manba bazada QQS maydoni hamma
+  yozuvda bir xil). Ayrim tovarlar import qilinganda QQS dan ozod:
+  Soliq kodeksi 246-modda, hamda alohida qarorlar (masalan ПКМ 352 —
+  o'xshashi ishlab chiqarilmaydigan texnologik uskunalar: bojdan ham,
+  QQS dan ham ozod). Kod yonida "⚠️ IMTIYOZ qoidasi bor" yozilgan
+  bo'lsa — shartini tekshirmasdan 12% ni qo'llab hisoblama, avval
+  imtiyoz shartini ayt va foydalanuvchidan holatini so'ra.
+  Imtiyozlar SHARTLI: "yuridik shaxslar tomonidan", "ro'yxatga
+  kiritilgan bo'lsa", "ishlab chiqarish uchun" kabi. Shartga tushmasa,
+  odatdagi stavka qo'llanadi.
+
 ⚠️ HUJJAT TALABLARI HAQIDA:
   Blokda faqat TIF TN kodiga ANIQ bog'langan talablar bo'ladi. Bo'lim
   ko'rsatilmagan bo'lsa — "bazada yozuv yo'q", bu "kerak emas" DEGANI EMAS.
@@ -178,7 +191,18 @@ func (s *Service) withRetrieval(history []llm.Message) []llm.Message {
 	var blocks []string
 	if s.codes != nil {
 		if m := s.codes.Search(last.Content, topCodes); len(m) > 0 {
-			blocks = append(blocks, formatMatches(s.codes.Meta(), m))
+			// Imtiyoz belgisi aynan STAVKA yonida ko'rsatiladi. Uni faqat
+			// alohida blokda bersak, model "QQS 12%" ni ko'rib hisoblab
+			// yuborishi mumkin — imtiyoz esa pastda qolib ketardi.
+			exempt := map[string][]string{}
+			if s.docs != nil {
+				for _, mt := range m {
+					if e := s.docs.Exemptions(mt.Code.Code, docs.Import); len(e) > 0 {
+						exempt[mt.Code.Code] = e
+					}
+				}
+			}
+			blocks = append(blocks, formatMatches(s.codes.Meta(), m, exempt))
 			// Hujjat talablari eng mos kodlar bo'yicha qo'shiladi. Faqat
 			// bir nechtasi — talab matnlari uzun, sakkizta kodniki
 			// kontekstni bosib ketardi.
@@ -228,7 +252,7 @@ func formatLaws(matches []laws.Match) string {
 }
 
 // formatMatches — topilgan kodlarni kontekst bloki sifatida shakllantiradi.
-func formatMatches(m hscode.Meta, matches []hscode.Match) string {
+func formatMatches(m hscode.Meta, matches []hscode.Match, exempt map[string][]string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "<TIF_TN_BAZASIDAN>\nSavolga mos kodlar (%s, stavkalar %s holatiga):\n\n",
 		m.Nomenclature, m.RatesAsOf)
@@ -250,6 +274,12 @@ func formatMatches(m hscode.Meta, matches []hscode.Match) string {
 			fmt.Fprintf(&b, " | qo'shimcha o'lchov: %s", c.Unit)
 		}
 		b.WriteString("\n")
+		if e := exempt[c.Code]; len(e) > 0 {
+			fmt.Fprintf(&b, "   ⚠️ bu kodga IMTIYOZ qoidasi bor (%s) — stavka yuqorida\n"+
+				"      ko'rsatilgandek bo'lmasligi mumkin. Shart <HUJJAT_TALABLARI>\n"+
+				"      blokidagi \"Imtiyozlar\" bo'limida; uni tekshirmasdan hisoblama.\n",
+				strings.Join(e, ", "))
+		}
 	}
 	// Ro'yxat oxirida yana bir bor eslatamiz. Sinovda model har bir kod
 	// yonidagi "aksiz: bu bazada yo'q" belgisini ko'ra turib ham "traktor
