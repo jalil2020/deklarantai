@@ -16,6 +16,7 @@ import (
 	"deklarant-ai/backend/internal/hscode"
 	"deklarant-ai/backend/internal/laws"
 	"deklarant-ai/backend/internal/llm"
+	"deklarant-ai/backend/internal/rates"
 )
 
 const (
@@ -68,6 +69,14 @@ BOJXONA TO'LOVLARI (GTD kodlari bilan):
   79. Utilizatsiya yig'imi — avtotransport uchun, netto vazn bo'yicha (alohida qoida).
 
   Bojxona qiymati = (faktura qiymati + transport xarajati) × valyuta kursi.
+
+⚠️ VALYUTA KURSINI HECH QACHON TAXMIN QILMA.
+  "<VALYUTA_KURSI>" bloki berilgan bo'lsa — faqat undagi raqamni ishlat.
+  Blok bo'lmasa yoki kerakli valyuta yo'q bo'lsa — foydalanuvchidan SO'RA.
+  "kurs taxminan 12 600 deb hisobladim" kabi javob BERMA: noto'g'ri kurs
+  butun hisobni buzadi va buni foydalanuvchi sezmay qoladi.
+  Kurs sanaga bog'liq: bojxona qiymati deklaratsiya ro'yxatga olingan
+  kundagi Markaziy bank kursi bo'yicha hisoblanadi.
 
 QOIDALAR:
 - O'zbek tilida, aniq va lo'nda javob ber (foydalanuvchi boshqa tilda so'rasa, o'sha tilda).
@@ -148,14 +157,54 @@ QOIDALAR:
 type Service struct {
 	client *llm.Client
 	codes  *hscode.Store
-	laws   *laws.Store // ixtiyoriy; nil bo'lsa qonun konteksti qo'shilmaydi
-	docs   *docs.Store // ixtiyoriy; hujjat talablari
+	laws   *laws.Store   // ixtiyoriy; nil bo'lsa qonun konteksti qo'shilmaydi
+	docs   *docs.Store   // ixtiyoriy; hujjat talablari
+	rates  *rates.Client // ixtiyoriy; valyuta kurslari
 }
 
-// New — LLM klienti, TIF TN bazasi, qonun korpusi va hujjat talablari
-// asosida xizmat yaratadi. lawStore va docStore nil bo'lishi mumkin.
-func New(client *llm.Client, codes *hscode.Store, lawStore *laws.Store, docStore *docs.Store) *Service {
-	return &Service{client: client, codes: codes, laws: lawStore, docs: docStore}
+// New — LLM klienti va ma'lumot bazalari asosida xizmat yaratadi.
+// lawStore, docStore va rateClient nil bo'lishi mumkin.
+func New(client *llm.Client, codes *hscode.Store, lawStore *laws.Store,
+	docStore *docs.Store, rateClient *rates.Client) *Service {
+	return &Service{client: client, codes: codes, laws: lawStore, docs: docStore, rates: rateClient}
+}
+
+// ratesBlock — joriy valyuta kurslari.
+//
+// NEGA KERAK: kurssiz model uni TAXMIN qilardi ("kurs ~12 600 deb
+// hisobladim") — bu jim va xavfli xato. Endi haqiqiy kurs beriladi.
+//
+// Xizmat ishlamasa blok qo'shilmaydi va model ko'rsatmaga ko'ra
+// foydalanuvchidan kursni SO'RAYDI — taxmin qilmaydi.
+func (s *Service) ratesBlock(ctx context.Context) string {
+	if s.rates == nil {
+		return ""
+	}
+	all, err := s.rates.On(ctx, time.Time{})
+	if err != nil {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("<VALYUTA_KURSI>\n")
+	first := true
+	for _, ccy := range []string{"USD", "EUR", "RUB", "CNY", "KZT", "TRY"} {
+		r, ok := all[ccy]
+		if !ok {
+			continue
+		}
+		if first {
+			fmt.Fprintf(&b, "Markaziy bank kursi, %s holatiga:\n", r.Date)
+			first = false
+		}
+		fmt.Fprintf(&b, "  1 %s = %.2f so'm\n", r.Ccy, r.Value)
+	}
+	if first {
+		return "" // hech qaysi valyuta topilmadi
+	}
+	b.WriteString("Bojxona qiymati DEKLARATSIYA RO'YXATGA OLINGAN kundagi kurs\n")
+	b.WriteString("bo'yicha hisoblanadi. Boshqa sanadagi kurs kerak bo'lsa — ayt.\n")
+	b.WriteString("</VALYUTA_KURSI>")
+	return b.String()
 }
 
 // Available — AI mavjudligini bildiradi.
@@ -205,7 +254,7 @@ QO'LINGDAGI BAZA:
 
 // Reply — suhbat tarixiga javob qaytaradi.
 func (s *Service) Reply(ctx context.Context, history []llm.Message) (string, error) {
-	msgs, _ := s.withRetrieval(history)
+	msgs, _ := s.withRetrieval(ctx, history)
 	return s.client.Complete(ctx, s.systemPrompt(), msgs)
 }
 
@@ -214,7 +263,7 @@ func (s *Service) Reply(ctx context.Context, history []llm.Message) (string, err
 // Retrieval Reply bilan bir xil — farqi faqat javobning yetkazilishida,
 // shuning uchun ikkala yo'l ham bir xil kontekst va ko'rsatma bilan ishlaydi.
 func (s *Service) ReplyStream(ctx context.Context, history []llm.Message, onChunk llm.StreamFunc) error {
-	msgs, retrieved := s.withRetrieval(history)
+	msgs, retrieved := s.withRetrieval(ctx, history)
 	var text string
 	if len(history) > 0 {
 		text = history[len(history)-1].Content
@@ -225,7 +274,7 @@ func (s *Service) ReplyStream(ctx context.Context, history []llm.Message, onChun
 // withRetrieval — oxirgi foydalanuvchi savoliga mos TIF TN kodlari va qonun
 // parchalarini topib, uning matniga qo'shib qo'yadi.
 // Asl tarix o'zgartirilmaydi (nusxa qaytariladi).
-func (s *Service) withRetrieval(history []llm.Message) ([]llm.Message, bool) {
+func (s *Service) withRetrieval(ctx context.Context, history []llm.Message) ([]llm.Message, bool) {
 	if len(history) == 0 {
 		return history, false
 	}
@@ -272,6 +321,10 @@ func (s *Service) withRetrieval(history []llm.Message) ([]llm.Message, bool) {
 				blocks = append(blocks, b)
 			}
 		}
+	}
+	// Valyuta kursi — bloklar bo'lmasa ham foydali (masalan "bugun kurs qancha").
+	if rb := s.ratesBlock(ctx); rb != "" {
+		blocks = append(blocks, rb)
 	}
 	if len(blocks) == 0 {
 		return history, false

@@ -30,7 +30,7 @@ Deklarant AI/
 ├── backend/                  # Go REST API
 │   ├── main.go
 │   ├── data/hscodes.json     # TIF TN bazasi (13 142 kod)
-│   ├── data/laws.json        # qonun korpusi (1 111 parcha)
+│   ├── data/laws.json        # qonun korpusi (1 405 parcha)
 │   ├── data/docs.json        # hujjat talablari (15 112 qoida)
 │   ├── data/countries.json   # davlatlar va boj rejimi (254 ta)
 │   └── internal/
@@ -39,6 +39,7 @@ Deklarant AI/
 │       ├── duty/             # boj hisoblash
 │       ├── docs/             # hujjat talablari (kod oralig'i bo'yicha)
 │       ├── countries/        # kelib chiqish davlati -> boj koeffitsienti
+│       ├── rates/            # Markaziy bank valyuta kurslari
 │       ├── laws/             # qonun korpusi qidiruvi
 │       ├── chat/             # RAG + suhbat
 │       └── llm/              # Claude API klienti
@@ -76,7 +77,7 @@ tizim konventsiyasi (Bryussel, 14.06.1983).
 
 ## Qonun korpusi (RAG)
 
-`backend/data/laws.json` — **1 111 parcha, 89 hujjatdan** (3,9 MB). Generatsiya:
+`backend/data/laws.json` — **1 405 parcha, 89 hujjatdan** (3,8 MB). Generatsiya:
 
 ```bash
 node tools/extract-laws.mjs [--dry]
@@ -125,7 +126,7 @@ Har bir parchaga imkon qadar **lex.uz havolasi** biriktiriladi, shunda AI javobd
 rasmiy manbani ko'rsatadi va foydalanuvchi o'zi tekshira oladi. Moslik
 `tools/lex-links.mjs` da **qo'lda** yuritiladi — manba bazasida lex.uz
 identifikatorlari yo'q (Bojxona kodeksi: bazada `39534`, lex.uz da `2876352`).
-Hozirgi qamrov — **80%** (887/1 111 parcha, 16 ta hujjat).
+Hozirgi qamrov — **77%** (1 079/1 405 parcha, 16 ta hujjat).
 
 Nega qo'lda: lex.uz da ochiq API ham, `sitemap.xml` ham yo'q, qidiruvi esa
 faqat JavaScriptda ishlaydi (`?query=` parametri e'tiborga olinmaydi),
@@ -247,6 +248,43 @@ yozadi.
 lekin natijada bu ochiq yoziladi. Qonun bo'yicha noma'lum kelib chiqishga
 ×2 qo'llanadi, ammo API chaqiruvchisi shunchaki maydonni to'ldirmagan
 bo'lishi mumkin — jim ravishda bojni ikkilantirish noto'g'ri javob bo'lardi.
+
+## Valyuta kursi
+
+Manba: **cbu.uz** ochiq API (`internal/rates`). Kurs bazaga yozilmaydi —
+har kuni o'zgargani uchun to'g'ridan-to'g'ri olinadi va keshlanadi.
+
+**Nega kerak:** ilgari foydalanuvchi kursni qo'lda kiritardi, kiritmasa AI
+uni **taxmin qilardi** — sinovda *"kurs ~12 600 deb hisobladim"* degan edi.
+Bu jim va xavfli xato: noto'g'ri kurs butun hisobni buzadi va buni
+foydalanuvchi sezmaydi.
+
+Chatga joriy kurslar (USD, EUR, RUB, CNY, KZT, TRY) kontekst bloki sifatida
+beriladi. API da valyuta kodini yozish yetarli:
+
+```bash
+curl -X POST http://localhost:8080/api/duty/calculate \
+  -d '{"invoice":10000,"currency":"USD","import_duty":5,"vat":12,
+       "origin_country":"Xitoy"}'
+```
+
+⚠️ **Kurs sanaga bog'liq.** Bojxona qiymati deklaratsiya **ro'yxatga olingan
+kundagi** kurs bo'yicha hisoblanadi. `date` berilsa, o'sha kundagi kurs
+olinadi (`/json/all/2026-07-10/`), aks holda oxirgi kurs.
+
+⚠️ **`Nominal` maydoni.** cbu.uz ba'zi valyutalarni 10 birlik uchun
+kotirovka qiladi (IDR, IRR, VND). Bo'lmasak, ular **o'n barobar xato**
+chiqadi — shuning uchun `Rate / Nominal` hisoblanadi.
+
+⚠️ **Xizmat ishlamasa — xato qaytadi, taxminiy kurs emas.** API 502 va
+"kursni qo'lda kiriting" deb aytadi; chat esa kurs blokini qo'shmaydi va
+ko'rsatmaga ko'ra foydalanuvchidan so'raydi.
+
+Kesh: tarixiy kurs muddatsiz (u o'zgarmaydi), bugungisi kun oxirigacha.
+
+| O'zgaruvchi | Sukut | Tavsif |
+|---|---|---|
+| `CBU_API_URL` | cbu.uz | Boshqa manba yoki testdagi soxta server |
 
 ## Xarajat nazorati
 

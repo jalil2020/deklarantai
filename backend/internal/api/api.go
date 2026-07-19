@@ -15,6 +15,7 @@ import (
 	"deklarant-ai/backend/internal/hscode"
 	"deklarant-ai/backend/internal/laws"
 	"deklarant-ai/backend/internal/llm"
+	"deklarant-ai/backend/internal/rates"
 )
 
 // Server — barcha bog'liqliklarni ushlab turadi.
@@ -24,17 +25,19 @@ type Server struct {
 	chat      *chat.Service
 	llm       *llm.Client
 	countries *countries.Store // nil bo'lishi mumkin
+	rates     *rates.Client    // nil bo'lishi mumkin
 	limiter   *limiter
 }
 
 // New — server yaratadi.
-func New(codes *hscode.Store, lawStore *laws.Store, chatSvc *chat.Service, llmClient *llm.Client, countryStore *countries.Store) *Server {
+func New(codes *hscode.Store, lawStore *laws.Store, chatSvc *chat.Service, llmClient *llm.Client, countryStore *countries.Store, rateClient *rates.Client) *Server {
 	return &Server{
 		codes:     codes,
 		laws:      lawStore,
 		chat:      chatSvc,
 		llm:       llmClient,
 		countries: countryStore,
+		rates:     rateClient,
 		limiter:   newLimiter(),
 	}
 }
@@ -138,6 +141,29 @@ func (s *Server) handleDutyCalc(w http.ResponseWriter, r *http.Request) {
 	if req.CustomsValue < 0 {
 		writeErr(w, http.StatusBadRequest, "bojxona qiymati manfiy bo'lishi mumkin emas")
 		return
+	}
+
+	// Valyuta berilgan bo'lsa, kursni Markaziy bankdan olamiz.
+	//
+	// DIQQAT: kurs SANAGA bog'liq — bojxona qiymati deklaratsiya ro'yxatga
+	// olingan kundagi kurs bo'yicha hisoblanadi. Xizmat ishlamasa XATO
+	// qaytaramiz: taxminiy kurs bilan hisoblab berish butun natijani
+	// jim ravishda buzardi.
+	if req.CurrencyRate == 0 && req.Currency != "" && s.rates != nil {
+		rate, err := s.rates.Get(r.Context(), req.Currency, req.Date)
+		if err != nil {
+			writeErr(w, http.StatusBadGateway,
+				"valyuta kursini olib bo'lmadi ("+req.Currency+"): "+err.Error()+
+					". Kursni currency_rate maydonida qo'lda kiriting.")
+			return
+		}
+		req.CurrencyRate = rate.Value
+		// Yig'im shkalasi dollarda — USD kursi ham kerak.
+		if req.USDRate == 0 {
+			if usd, err := s.rates.Get(r.Context(), "USD", req.Date); err == nil {
+				req.USDRate = usd.Value
+			}
+		}
 	}
 
 	// Davlat nomi berilgan bo'lsa, koeffitsientni o'zimiz aniqlaymiz —

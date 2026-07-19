@@ -141,6 +141,11 @@ type Request struct {
 	Transport    float64 `json:"transport,omitempty"`     // transport xarajati, valyutada
 	CurrencyRate float64 `json:"currency_rate,omitempty"` // 1 birlik = N so'm
 
+	// Currency — valyuta kodi ("USD", "EUR" yoki "840"). Berilsa va
+	// CurrencyRate bo'sh bo'lsa, kurs Markaziy bankdan olinadi.
+	// Kurs SANAGA bog'liq: Date maydonidagi kun bo'yicha olinadi.
+	Currency string `json:"currency,omitempty"`
+
 	// USDRate — 1 USD necha so'm. Yig'im shkalasi dollarda bo'lgani uchun zarur.
 	USDRate float64 `json:"usd_rate,omitempty"`
 

@@ -13,11 +13,21 @@ import (
 	"deklarant-ai/backend/internal/hscode"
 	"deklarant-ai/backend/internal/laws"
 	"deklarant-ai/backend/internal/llm"
+	"deklarant-ai/backend/internal/rates"
 )
 
 // newServer — haqiqiy bazalar bilan server yig'adi.
 // aiURL bo'sh bo'lmasa, LLM so'rovlari o'sha manzilga (soxta serverga) ketadi.
 func newServer(t *testing.T, apiKey, aiURL string) http.Handler {
+	return buildServer(t, apiKey, aiURL, nil)
+}
+
+// newServerWithRates — valyuta kursi xizmati ulangan server.
+func newServerWithRates(t *testing.T, cbuURL string) http.Handler {
+	return buildServer(t, "", "", rates.New(cbuURL))
+}
+
+func buildServer(t *testing.T, apiKey, aiURL string, rateClient *rates.Client) http.Handler {
 	t.Helper()
 	t.Setenv("ANTHROPIC_API_KEY", apiKey)
 	t.Setenv("ANTHROPIC_API_URL", aiURL)
@@ -39,7 +49,7 @@ func newServer(t *testing.T, apiKey, aiURL string) http.Handler {
 		t.Fatal(err)
 	}
 	client := llm.New()
-	return New(codes, lawStore, chat.New(client, codes, lawStore, docStore), client, countryStore).Routes()
+	return New(codes, lawStore, chat.New(client, codes, lawStore, docStore, nil), client, countryStore, rateClient).Routes()
 }
 
 // do — so'rov yuboradi va javobni qaytaradi.
@@ -511,5 +521,76 @@ func TestDutyUnknownCountry(t *testing.T) {
 	wantStatus(t, w, http.StatusBadRequest, "noma'lum davlat")
 	if msg, _ := out["error"].(string); !strings.Contains(msg, "topilmadi") {
 		t.Errorf("xato matni = %q", msg)
+	}
+}
+
+// ------------------------------------------------------------------ valyuta
+
+// fakeCBU — Markaziy bank javobini taqlid qiladi.
+func fakeCBU(t *testing.T, ok bool) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !ok {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		_, _ = w.Write([]byte(`[
+		 {"Code":"840","Ccy":"USD","CcyNm_UZ":"AQSH dollari","Nominal":"1","Rate":"12093.35","Date":"17.07.2026"},
+		 {"Code":"978","Ccy":"EUR","CcyNm_UZ":"Yevro","Nominal":"1","Rate":"13867.44","Date":"17.07.2026"}
+		]`))
+	}))
+}
+
+// Valyuta kodi berilsa, kurs Markaziy bankdan olinishi kerak —
+// foydalanuvchi kursni bilishi shart emas.
+func TestDutyCurrencyFromCBU(t *testing.T) {
+	cbu := fakeCBU(t, true)
+	defer cbu.Close()
+	h := newServerWithRates(t, cbu.URL)
+
+	w, out := do(t, h, http.MethodPost, "/api/duty/calculate",
+		`{"date":"2026-07-19T00:00:00Z","invoice":10000,"currency":"USD",
+		  "import_duty":0,"vat":12,"origin_multiplier":1}`)
+	wantStatus(t, w, http.StatusOK, "valyuta bo'yicha hisob")
+
+	// 10 000 × 12 093,35 = 120 933 500
+	if cv, _ := out["customs_value"].(float64); cv != 120_933_500 {
+		t.Errorf("bojxona qiymati = %v; 120 933 500 kutilgan", out["customs_value"])
+	}
+}
+
+// Kurs xizmati ishlamasa — XATO qaytishi kerak, taxminiy kurs bilan
+// hisoblab berish emas. Noto'g'ri kurs butun natijani jim buzadi.
+func TestDutyCurrencyServiceDown(t *testing.T) {
+	cbu := fakeCBU(t, false)
+	defer cbu.Close()
+	h := newServerWithRates(t, cbu.URL)
+
+	w, out := do(t, h, http.MethodPost, "/api/duty/calculate",
+		`{"invoice":10000,"currency":"USD","import_duty":0,"vat":12}`)
+	wantStatus(t, w, http.StatusBadGateway, "kurs xizmati ishlamayapti")
+
+	msg, _ := out["error"].(string)
+	if !strings.Contains(msg, "currency_rate") {
+		t.Errorf("xato xabari qo'lda kiritish yo'lini ko'rsatmaydi: %q", msg)
+	}
+}
+
+// Kurs ochiq berilgan bo'lsa, tashqi xizmatga murojaat qilinmasligi kerak.
+func TestDutyExplicitRateSkipsCBU(t *testing.T) {
+	var hits int
+	cbu := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer cbu.Close()
+	h := newServerWithRates(t, cbu.URL)
+
+	w, _ := do(t, h, http.MethodPost, "/api/duty/calculate",
+		`{"invoice":10000,"currency":"USD","currency_rate":12000,"usd_rate":12000,
+		  "import_duty":0,"vat":12}`)
+	wantStatus(t, w, http.StatusOK, "kurs qo'lda berilgan")
+	if hits != 0 {
+		t.Errorf("kurs berilgan, lekin tashqi xizmatga %d marta murojaat qilindi", hits)
 	}
 }

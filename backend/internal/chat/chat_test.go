@@ -12,6 +12,7 @@ import (
 	"deklarant-ai/backend/internal/hscode"
 	"deklarant-ai/backend/internal/laws"
 	"deklarant-ai/backend/internal/llm"
+	"deklarant-ai/backend/internal/rates"
 )
 
 // Haqiqiy bazalar bilan sinaymiz — retrieval sifati shu bilan o'lchanadi.
@@ -29,7 +30,7 @@ func newService(t *testing.T) *Service {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return New(llm.New(), codes, lawStore, docStore)
+	return New(llm.New(), codes, lawStore, docStore, nil)
 }
 
 func userMsg(text string) []llm.Message {
@@ -40,7 +41,7 @@ func userMsg(text string) []llm.Message {
 
 // Oxirgi savolga baza bloklari qo'shilishi kerak.
 func TestWithRetrievalAppendsBlocks(t *testing.T) {
-	got, retrieved := newService(t).withRetrieval(userMsg("traktor import qilsam qancha boj"))
+	got, retrieved := newService(t).withRetrieval(context.Background(), userMsg("traktor import qilsam qancha boj"))
 	if !retrieved {
 		t.Error("baza konteksti topilmadi deb belgilandi")
 	}
@@ -63,7 +64,7 @@ func TestWithRetrievalDoesNotMutateHistory(t *testing.T) {
 	orig := userMsg("traktor")
 	before := orig[0].Content
 
-	s.withRetrieval(orig)
+	s.withRetrieval(context.Background(), orig)
 
 	if orig[0].Content != before {
 		// Kontekst bloklari juda uzun — xato xabarida faqat boshini
@@ -90,7 +91,7 @@ func TestWithRetrievalSkipsWhenNothingToSearch(t *testing.T) {
 		"bo'sh tarix":        {},
 	}
 	for name, h := range cases {
-		got, _ := s.withRetrieval(h)
+		got, _ := s.withRetrieval(context.Background(), h)
 		if len(got) != len(h) {
 			t.Errorf("%s: xabarlar soni o'zgardi (%d -> %d)", name, len(h), len(got))
 			continue
@@ -106,7 +107,7 @@ func TestWithRetrievalSkipsWhenNothingToSearch(t *testing.T) {
 // Hech narsa topilmasa, tarix o'zgarmasdan qaytishi kerak.
 func TestWithRetrievalNoMatches(t *testing.T) {
 	h := userMsg("zzzqwertyuiop")
-	got, retrieved := newService(t).withRetrieval(h)
+	got, retrieved := newService(t).withRetrieval(context.Background(), h)
 	if retrieved {
 		t.Error("moslik yo'q, lekin topildi deb belgilandi")
 	}
@@ -136,7 +137,7 @@ func TestSystemPromptHasFeeScale(t *testing.T) {
 
 // Baza mavjud bo'lmasa ham prompt ishlashi kerak.
 func TestSystemPromptWithoutStores(t *testing.T) {
-	s := New(llm.New(), nil, nil, nil)
+	s := New(llm.New(), nil, nil, nil, nil)
 	if got := s.systemPrompt(); !strings.Contains(got, "Deklarant AI") {
 		t.Error("bazasiz prompt asosiy ko'rsatmani yo'qotdi")
 	}
@@ -326,7 +327,6 @@ func TestReplyWithoutAPIKey(t *testing.T) {
 	}
 }
 
-
 // Arzon model FAQAT bazadan hech narsa topilmagan qisqa savolga.
 //
 // Xavf aniq: stavka yoki modda raqami arzonlashtiriladigan joy emas.
@@ -359,7 +359,7 @@ func TestModelRouting(t *testing.T) {
 func TestContextBudget(t *testing.T) {
 	s := newService(t)
 	for _, q := range []string{"salom", "bojxona", "traktor import qilsam qancha boj"} {
-		msgs, _ := s.withRetrieval(userMsg(q))
+		msgs, _ := s.withRetrieval(context.Background(), userMsg(q))
 		got := len(msgs[len(msgs)-1].Content)
 		// Byudjet qonun blokiga qo'llanadi; kod va hujjat bloklari
 		// ustiga qo'shiladi, shuning uchun biroz zaxira qoldiramiz.
@@ -381,5 +381,76 @@ func TestBudgetTruncationIsVisible(t *testing.T) {
 	got := formatLaws(m, 100)
 	if !strings.Contains(got, "hajm chegarasi tufayli kiritilmadi") {
 		t.Error("tushib qolgan parchalar haqida ogohlantirish yo'q")
+	}
+}
+
+// -------------------------------------------------------------- valyuta kursi
+
+func cbuServer(t *testing.T, ok bool) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !ok {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		_, _ = w.Write([]byte(`[
+		 {"Code":"840","Ccy":"USD","CcyNm_UZ":"AQSH dollari","Nominal":"1","Rate":"12093.35","Date":"17.07.2026"},
+		 {"Code":"643","Ccy":"RUB","CcyNm_UZ":"Rossiya rubli","Nominal":"1","Rate":"155.22","Date":"17.07.2026"}
+		]`))
+	}))
+}
+
+func serviceWithRates(t *testing.T, cbuURL string) *Service {
+	t.Helper()
+	s := newService(t)
+	s.rates = rates.New(cbuURL)
+	return s
+}
+
+// Kurs kontekstga qo'shilishi kerak — busiz model uni TAXMIN qilardi.
+func TestRatesBlock(t *testing.T) {
+	srv := cbuServer(t, true)
+	defer srv.Close()
+
+	got := serviceWithRates(t, srv.URL).ratesBlock(context.Background())
+	for _, want := range []string{
+		"<VALYUTA_KURSI>",
+		"1 USD = 12093.35 so'm",
+		"2026-07-17",                // kurs sanasi
+		"RO'YXATGA OLINGAN kundagi", // qaysi sana kursi kerakligi
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("kurs blokida %q yo'q:\n%s", want, got)
+		}
+	}
+}
+
+// Xizmat ishlamasa — blok QO'SHILMAYDI va model ko'rsatmaga ko'ra
+// foydalanuvchidan kursni so'raydi. Taxminiy kurs bermaslik shart.
+func TestRatesBlockWhenServiceDown(t *testing.T) {
+	srv := cbuServer(t, false)
+	defer srv.Close()
+
+	if got := serviceWithRates(t, srv.URL).ratesBlock(context.Background()); got != "" {
+		t.Errorf("xizmat ishlamayapti, lekin blok yasaldi: %q", got)
+	}
+}
+
+// Kurs xizmati ulanmagan bo'lsa ham chat ishlashi kerak.
+func TestRatesBlockWithoutClient(t *testing.T) {
+	if got := newService(t).ratesBlock(context.Background()); got != "" {
+		t.Errorf("klient yo'q, lekin blok yasaldi: %q", got)
+	}
+}
+
+// Kurs bloki retrieval kontekstiga tushishi kerak.
+func TestRetrievalIncludesRates(t *testing.T) {
+	srv := cbuServer(t, true)
+	defer srv.Close()
+
+	msgs, _ := serviceWithRates(t, srv.URL).withRetrieval(
+		context.Background(), userMsg("traktor import qilsam qancha boj"))
+	if !strings.Contains(msgs[len(msgs)-1].Content, "<VALYUTA_KURSI>") {
+		t.Error("kurs bloki kontekstga qo'shilmadi")
 	}
 }

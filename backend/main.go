@@ -13,6 +13,7 @@ import (
 	"deklarant-ai/backend/internal/hscode"
 	"deklarant-ai/backend/internal/laws"
 	"deklarant-ai/backend/internal/llm"
+	"deklarant-ai/backend/internal/rates"
 )
 
 func main() {
@@ -68,6 +69,10 @@ func main() {
 		log.Printf("Davlatlar: %d ta (%d tasi erkin savdo)", countryStore.Len(), len(countryStore.FreeTrade()))
 	}
 
+	// Valyuta kurslari — Markaziy bankdan. Xizmat ishlamasa chat kursni
+	// SO'RAYDI, taxmin qilmaydi.
+	rateClient := rates.New(os.Getenv("CBU_API_URL"))
+
 	llmClient := llm.New()
 	if llmClient.Available() {
 		log.Printf("AI yoqilgan (Claude)")
@@ -75,8 +80,8 @@ func main() {
 		log.Printf("AI o'chirilgan: ANTHROPIC_API_KEY sozlanmagan (chat ishlamaydi)")
 	}
 
-	chatSvc := chat.New(llmClient, codes, lawStore, docStore)
-	srv := api.New(codes, lawStore, chatSvc, llmClient, countryStore)
+	chatSvc := chat.New(llmClient, codes, lawStore, docStore, rateClient)
+	srv := api.New(codes, lawStore, chatSvc, llmClient, countryStore, rateClient)
 
 	log.Printf("Server ishga tushdi: http://localhost%s", addr)
 	if err := http.ListenAndServe(addr, srv.Routes()); err != nil {
