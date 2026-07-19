@@ -351,16 +351,34 @@ func (s *Service) withRetrieval(ctx context.Context, history []llm.Message) ([]l
 	}
 
 	var blocks []string
+	// Aniq kodga bog'langan imtiyoz topildimi — umumiy ro'yxat kerakmi,
+	// shuni hal qiladi.
+	codeExemptionFound := false
 	if s.codes != nil {
 		if m := s.codes.Search(last.Content, topCodes); len(m) > 0 {
 			// Imtiyoz belgisi aynan STAVKA yonida ko'rsatiladi. Uni faqat
 			// alohida blokda bersak, model "QQS 12%" ni ko'rib hisoblab
 			// yuborishi mumkin — imtiyoz esa pastda qolib ketardi.
-			exempt := map[string][]string{}
+			// Faqat "imtiyoz bor" emas, SHARTI bilan birga.
+			//
+			// Sinovda model "8701 24 uchun imtiyoz bor, u elektr
+			// tyagachlarga tegishli, sizniki dizel — imtiyoz yo'q" dedi.
+			// Aslida imtiyoz hamma kodga tegishli va sharti butunlay
+			// boshqa ("Yevro-5 va undan yuqori ekologik toifa"). Sabab:
+			// kod yonida faqat belgi turardi, shart esa boshqa blokda —
+			// modelga ikkovini bog'lash kerak bo'ldi va u xato qildi.
+			exempt := map[string][]docs.Requirement{}
 			if s.docs != nil {
 				for _, mt := range m {
-					if e := s.docs.Exemptions(mt.Code.Code, docs.Import); len(e) > 0 {
-						exempt[mt.Code.Code] = e
+					var ex []docs.Requirement
+					for _, req := range s.docs.For(mt.Code.Code, docs.Import) {
+						if req.Category == "imtiyoz" {
+							ex = append(ex, req)
+						}
+					}
+					if len(ex) > 0 {
+						exempt[mt.Code.Code] = ex
+						codeExemptionFound = true
 					}
 				}
 			}
@@ -389,9 +407,19 @@ func (s *Service) withRetrieval(ctx context.Context, history []llm.Message) ([]l
 			}
 		}
 	}
-	// Imtiyoz dasturlari — faqat so'rov shu haqda bo'lsa.
-	if pb := s.programsBlock(last.Content); pb != "" {
-		blocks = append(blocks, pb)
+	// Imtiyoz dasturlarining UMUMIY ro'yxati — faqat so'rov shu haqda
+	// bo'lsa VA aniq kodga bog'langan imtiyoz topilmagan bo'lsa.
+	//
+	// NEGA SHART: sinovda "Volvo FH egarli tyagach, imtiyoz bormi?"
+	// so'roviga model ПКМ 352 (texnologik uskunalar) ni keltirib
+	// "tushmaydi" dedi — holbuki shu kod uchun aniq imtiyoz bor edi
+	// (ПП 251, yuk tashish texnikasi). Sabab: umumiy ro'yxat qamrov
+	// bo'yicha tartiblangan, ПКМ 352 birinchi turadi va aniq javobni
+	// bosib qo'yadi. Aniq kod topilganda umumiy ro'yxat shovqin.
+	if !codeExemptionFound {
+		if pb := s.programsBlock(last.Content); pb != "" {
+			blocks = append(blocks, pb)
+		}
 	}
 
 	// Valyuta kursi — bloklar bo'lmasa ham foydali (masalan "bugun kurs qancha").
@@ -468,7 +496,7 @@ func formatLaws(matches []laws.Match, budget int) string {
 }
 
 // formatMatches — topilgan kodlarni kontekst bloki sifatida shakllantiradi.
-func formatMatches(m hscode.Meta, matches []hscode.Match, exempt map[string][]string) string {
+func formatMatches(m hscode.Meta, matches []hscode.Match, exempt map[string][]docs.Requirement) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "<TIF_TN_BAZASIDAN>\nSavolga mos kodlar (%s, stavkalar %s holatiga):\n\n",
 		m.Nomenclature, m.RatesAsOf)
@@ -500,11 +528,17 @@ func formatMatches(m hscode.Meta, matches []hscode.Match, exempt map[string][]st
 		} else if duty.HasUtilFee(c.Code) {
 			b.WriteString("   ⚠️ bu kodga UTILIZATSIYA YIG'IMI (79) qo'llanadi (ПКМ 347)\n")
 		}
-		if e := exempt[c.Code]; len(e) > 0 {
-			fmt.Fprintf(&b, "   ⚠️ bu kodga IMTIYOZ qoidasi bor (%s) — stavka yuqorida\n"+
-				"      ko'rsatilgandek bo'lmasligi mumkin. Shart <HUJJAT_TALABLARI>\n"+
-				"      blokidagi \"Imtiyozlar\" bo'limida; uni tekshirmasdan hisoblama.\n",
-				strings.Join(e, ", "))
+		// Imtiyoz SHARTI bilan birga — kod yonida. Faqat "imtiyoz bor"
+		// deb qo'ysak, model uni boshqa blokdagi ro'yxat bilan bog'lashga
+		// urinib xato qiladi.
+		for _, e := range exempt[c.Code] {
+			fmt.Fprintf(&b, "   ⚠️ IMTIYOZ (%s dan ozod): %s",
+				strings.Join(e.Free, ", "), strings.Join(strings.Fields(e.Text), " "))
+			if e.Law != "" {
+				fmt.Fprintf(&b, " [asos: %s]", e.Law)
+			}
+			b.WriteString("\n      Shart bajarilsa stavka yuqoridagidek BO'LMAYDI.\n" +
+				"      Shartni tekshirmasdan hisoblama va imtiyozni va'da qilma.\n")
 		}
 	}
 	// Ro'yxat oxirida yana bir bor eslatamiz. Sinovda model har bir kod

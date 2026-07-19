@@ -74,10 +74,20 @@ var utilTable = []utilCategory{
 			{math.Inf(1), notSet, 600},
 		},
 	},
-	// Egarli tyagachlar — 8701 20 (yuqoridagi ikkita aniq koddan tashqari).
+	// Egarli tyagachlar.
+	//
+	// ⚠️ ESKI NOMENKLATURA. ПКМ 347 (2020) matnida kod "8701 20" deb
+	// yozilgan, lekin TIF TN 2022/2025 da bu pozitsiya BO'LINGAN:
+	// egarli tyagachlar endi 8701 21 – 8701 29 (dvigatel turi va
+	// vazniga qarab). Bazamizda 8701 20 umuman yo'q.
+	//
+	// Faqat qonun matnidagi kodni qoldirsak, Volvo FH kabi haqiqiy
+	// tyagach (8701 21 10 11) "ro'yxatda yo'q" deb qaytarilardi —
+	// holbuki unga 670/1360 BRV yig'im qo'llanadi. Shuning uchun
+	// yangi pozitsiyalar ham qo'shilgan.
 	{
 		Name:    "Egarli tyagachlar",
-		Codes:   []string{"870120"},
+		Codes:   []string{"870120", "870121", "870122", "870123", "870124", "870129"},
 		Measure: measureNone,
 		Rows:    []utilRow{{math.Inf(1), 670, 1360}},
 	},

@@ -175,7 +175,7 @@ func TestFormatMatchesExemptionWarning(t *testing.T) {
 	code := m[0].Code.Code
 
 	withOut := formatMatches(s.codes.Meta(), m, nil)
-	withIn := formatMatches(s.codes.Meta(), m, map[string][]string{code: {"boj", "qqs"}})
+	withIn := formatMatches(s.codes.Meta(), m, map[string][]docs.Requirement{code: {{Category: "imtiyoz", Free: []string{"boj", "qqs"}, Text: "Yevro-5 talablariga mos avtotransport", Law: "ПП 251"}}})
 
 	if strings.Contains(withOut, "IMTIYOZ") {
 		t.Error("imtiyozsiz holatda ogohlantirish chiqdi")
@@ -591,5 +591,38 @@ func TestProgramsBlockWarnsConditional(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Errorf("ro'yxatda %q yo'q", want)
 		}
+	}
+}
+
+// Aniq kodga bog'langan imtiyoz topilganda, UMUMIY ro'yxat
+// qo'shilmasligi kerak.
+//
+// Sinovda "Volvo FH egarli tyagach, imtiyoz bormi?" so'roviga model
+// ПКМ 352 (texnologik uskunalar) ni keltirib "tushmaydi" dedi —
+// holbuki shu kod uchun aniq imtiyoz bor edi (ПП 251, yuk tashish
+// texnikasi). Sabab: umumiy ro'yxat qamrov bo'yicha tartiblangan,
+// ПКМ 352 birinchi turadi va aniq javobni bosib qo'yadi.
+func TestSpecificExemptionBeatsGeneralList(t *testing.T) {
+	s := newService(t)
+
+	// Aniq kodi imtiyozli tovar — umumiy ro'yxat BO'LMASLIGI kerak.
+	msgs, _ := s.withRetrieval(context.Background(),
+		userMsg("Volvo FH egarli tyagach import qilaman, imtiyoz bormi?"))
+	body := msgs[len(msgs)-1].Content
+
+	if strings.Contains(body, "<IMTIYOZ_DASTURLARI>") {
+		t.Error("aniq kod imtiyozi topilgan, lekin umumiy ro'yxat ham qo'shildi — " +
+			"u aniq javobni bosib qo'yadi")
+	}
+	// Aniq imtiyoz esa kontekstda bo'lishi shart.
+	if !strings.Contains(body, "251") {
+		t.Error("kodga tegishli imtiyoz (ПП 251) kontekstda yo'q")
+	}
+
+	// Umumiy savolda esa ro'yxat kerak.
+	msgs2, _ := s.withRetrieval(context.Background(),
+		userMsg("umuman qanday imtiyozlar mavjud"))
+	if !strings.Contains(msgs2[len(msgs2)-1].Content, "<IMTIYOZ_DASTURLARI>") {
+		t.Error("umumiy savolga imtiyoz ro'yxati qo'shilmadi")
 	}
 }

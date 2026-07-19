@@ -213,3 +213,49 @@ func TestUtilFeeMeasureHint(t *testing.T) {
 		t.Errorf("ro'yxatda yo'q kod uchun o'lchov = %q; bo'sh kutilgan", got)
 	}
 }
+
+// ESKI NOMENKLATURA muammosi.
+//
+// ПКМ 347 (2020) matnida egarli tyagach kodi "8701 20" deb yozilgan,
+// lekin TIF TN 2022/2025 da bu pozitsiya bo'lingan: 8701 21 – 8701 29.
+// Bazamizda 8701 20 umuman yo'q.
+//
+// Faqat qonundagi kodni qoldirsak, haqiqiy tyagach (masalan Volvo FH,
+// 8701 21 10 11) "ro'yxatda yo'q" deb qaytarilardi — holbuki unga
+// 670/1360 BRV yig'im qo'llanadi.
+func TestUtilFeeNewNomenclatureTractorUnits(t *testing.T) {
+	const brv = 412_000
+	cases := []struct {
+		code string
+		age  float64
+		want float64
+	}{
+		{"8701 21 10 11", 2, 670},  // yangi tyagach (Volvo FH kabi)
+		{"8701 21 90 19", 6, 1360}, // 3 yildan oshgan
+		{"8701 24 10 10", 2, 670},
+		{"8701 29 00 00", 2, 670},
+	}
+	for _, c := range cases {
+		got, err := UtilizationFee(UtilFeeRequest{Date: testDate, Code: c.code, AgeYears: c.age})
+		if err != nil {
+			t.Errorf("%s: %v", c.code, err)
+			continue
+		}
+		if !strings.Contains(got.Category, "tyagach") {
+			t.Errorf("%s: toifa %q; egarli tyagach kutilgan", c.code, got.Category)
+		}
+		eq(t, got.Amount, c.want*brv, c.code)
+	}
+
+	// Qishloq xo'jaligi traktori (8701 91–95) tyagach TOIFASIGA
+	// tushib qolmasligi kerak — ular boshqa stavkada.
+	got, err := UtilizationFee(UtilFeeRequest{
+		Date: testDate, Code: "8701 94 100 1", Measure: 100, AgeYears: 5,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(got.Category, "tyagach") {
+		t.Error("qishloq xo'jaligi traktori tyagach deb belgilandi")
+	}
+}
