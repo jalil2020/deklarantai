@@ -225,6 +225,13 @@ Bular bilib turib qoldirilgan — ishlatishdan oldin hisobga olish kerak.
 
 **Sinovda:**
 
-- [ ] **Chat haqiqiy `ANTHROPIC_API_KEY` bilan hech qachon ishga tushirilmagan.**
-      `chat` va `api` paketlarida test yo'q.
+- [x] Chat haqiqiy `ANTHROPIC_API_KEY` bilan sinaldi (2026-07-19): kod
+      qidirish, boj/QQS/yig'im hisobi va lex.uz havolasi ishlaydi.
+- [ ] `chat` va `api` paketlarida avtomatik test yo'q — sinov qo'lda
+      qilingan.
+- [ ] **Javob har doim bir xil emas.** `temperature` ni pasaytirib bo'lmaydi
+      (bu modelda qo'llab-quvvatlanmaydi), shuning uchun barqarorlik faqat
+      kontekstni aniq yozish bilan ta'minlanadi. Sinovda uch urinishning
+      birida model aksizni "yo'q" deb aytdi — endi 289¹–289³-moddalar
+      qamroviga asoslanib, ammo baribir bazadan tasdiqlamay.
 ```
