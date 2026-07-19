@@ -30,12 +30,15 @@ Deklarant AI/
 ├── backend/                  # Go REST API
 │   ├── main.go
 │   ├── data/hscodes.json     # TIF TN bazasi (13 142 kod)
-│   ├── data/laws.json        # qonun korpusi (1 045 parcha)
+│   ├── data/laws.json        # qonun korpusi (1 111 parcha)
+│   ├── data/docs.json        # hujjat talablari (15 112 qoida)
 │   └── internal/
 │       ├── api/              # HTTP handlerlar + CORS
 │       ├── hscode/           # kod qidiruv
 │       ├── duty/             # boj hisoblash
-│       ├── chat/             # qonunchilik chatti
+│       ├── docs/             # hujjat talablari (kod oralig'i bo'yicha)
+│       ├── laws/             # qonun korpusi qidiruvi
+│       ├── chat/             # RAG + suhbat
 │       └── llm/              # Claude API klienti
 └── frontend/                 # React SPA
     └── src/
@@ -120,7 +123,7 @@ Har bir parchaga imkon qadar **lex.uz havolasi** biriktiriladi, shunda AI javobd
 rasmiy manbani ko'rsatadi va foydalanuvchi o'zi tekshira oladi. Moslik
 `tools/lex-links.mjs` da **qo'lda** yuritiladi — manba bazasida lex.uz
 identifikatorlari yo'q (Bojxona kodeksi: bazada `39534`, lex.uz da `2876352`).
-Hozirgi qamrov — **78%** (815/1 045 parcha, 15 ta hujjat).
+Hozirgi qamrov — **80%** (887/1 111 parcha, 16 ta hujjat).
 
 Nega qo'lda: lex.uz da ochiq API ham, `sitemap.xml` ham yo'q, qidiruvi esa
 faqat JavaScriptda ishlaydi (`?query=` parametri e'tiborga olinmaydi),
@@ -140,6 +143,39 @@ Chat har bir savolga bazadan **top-8 TIF TN kod** va **top-3 qonun parchasi**
 topib qo'shadi — butun baza promptga tashlanmaydi, shu sababli prompt keshi
 buzilmaydi. Qidiruv o'zbek tilining qo'shimchalarini hisobga oladi
 (`vaqtinchalik` → `vaqtincha`) va kam uchraydigan so'zga ko'proq vazn beradi (IDF).
+
+## Hujjat talablari
+
+`backend/data/docs.json` — **15 112 qoida, 106 tur** (4,0 MB). Generatsiya:
+
+```bash
+node tools/extract-docs.mjs [--date=2026-07-19]
+```
+
+Manba: `help.sqlite` ning `OnlineTnvedInfo` (talab turi va tavsifi) va
+`OnlineTnvedInfoItem` (kod oraliqlari, qonun, amal muddati) jadvallari.
+Talab **kod oralig'i** bo'yicha beriladi (`3001000000`–`3001999999`), shuning
+uchun qidiruv — oraliqqa tegishlilikni tekshirish.
+
+| Bo'lim | Nima | Soni |
+|--------|------|------|
+| `litsenziya` | Litsenziya talab qilinadigan tovarlar | 219 |
+| `sertifikat` | Muvofiqlik, sanitariya, ekologiya sertifikatlari | 4 765 |
+| `imtiyoz` | To'lovdan ozod qilish (qaysi to'lovdan — `free` maydonida) | 2 792 |
+| `boshqa` | Ro'yxatdan o'tish, ruxsatnoma va h.k. | 7 292 |
+| `tavsif` | **Hujjat emas** — GTD 31-grafada ko'rsatilishi shart bo'lgan ma'lumot | 44 |
+
+`tavsif` alohida ajratilgan: manbadagi `Specs_*` yozuvlari (dori nomi, dozasi,
+ishlab chiqaruvchi) hujjat emas, tovar tavsifiga oid. Ularni "boshqa talab"
+deb ko'rsatsak, foydalanuvchi mavjud bo'lmagan hujjatni izlab yurardi.
+
+⚠️ Bir xil talab turli **sana oraliqlari** bilan takrorlanadi (sertifikat:
+`2021-11-17..2024-11-24` va `2024-11-25..∞`). Ekstraktor `--date` ga amal
+qiluvchisini oladi, aks holda eskirgan talab ko'rsatilardi — 6 792 ta
+bekor qilingan yozuv chiqarildi.
+
+⚠️ Bu ro'yxatda **kodga aniq bog'lanmagan** hujjatlar bo'lmaydi. Chat buni
+ochiq aytadi: bo'lim ko'rsatilmagan bo'lsa, bu "talab qilinmaydi" degani emas.
 
 ## Ishga tushirish
 

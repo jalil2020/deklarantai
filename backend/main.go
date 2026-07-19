@@ -8,6 +8,7 @@ import (
 
 	"deklarant-ai/backend/internal/api"
 	"deklarant-ai/backend/internal/chat"
+	"deklarant-ai/backend/internal/docs"
 	"deklarant-ai/backend/internal/hscode"
 	"deklarant-ai/backend/internal/laws"
 	"deklarant-ai/backend/internal/llm"
@@ -16,6 +17,7 @@ import (
 func main() {
 	dataPath := getenv("HSCODE_DATA", "data/hscodes.json")
 	lawsPath := getenv("LAWS_DATA", "data/laws.json")
+	docsPath := getenv("DOCS_DATA", "data/docs.json")
 	addr := ":" + getenv("PORT", "8080")
 
 	codes, err := hscode.Load(dataPath)
@@ -36,6 +38,17 @@ func main() {
 		log.Printf("Qonun korpusi: %d ta hujjatdan %d parcha", lm.Docs, lawStore.Len())
 	}
 
+	// Hujjat talablari ham ixtiyoriy.
+	docStore, err := docs.Load(docsPath)
+	if err != nil {
+		log.Printf("Hujjat talablari yuklanmadi (%s): %v — chat ularsiz ishlaydi", docsPath, err)
+		docStore = nil
+	} else {
+		dm := docStore.Meta()
+		log.Printf("Hujjat talablari: %d ta qoida, %d tur (%s holatiga)",
+			docStore.Len(), dm.Types, dm.RulesAsOf)
+	}
+
 	llmClient := llm.New()
 	if llmClient.Available() {
 		log.Printf("AI yoqilgan (Claude)")
@@ -43,7 +56,7 @@ func main() {
 		log.Printf("AI o'chirilgan: ANTHROPIC_API_KEY sozlanmagan (chat ishlamaydi)")
 	}
 
-	chatSvc := chat.New(llmClient, codes, lawStore)
+	chatSvc := chat.New(llmClient, codes, lawStore, docStore)
 	srv := api.New(codes, lawStore, chatSvc, llmClient)
 
 	log.Printf("Server ishga tushdi: http://localhost%s", addr)

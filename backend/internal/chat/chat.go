@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"deklarant-ai/backend/internal/docs"
 	"deklarant-ai/backend/internal/duty"
 	"deklarant-ai/backend/internal/hscode"
 	"deklarant-ai/backend/internal/laws"
@@ -29,6 +30,7 @@ const basePrompt = `Sen "Deklarant AI" — O'zbekiston Respublikasi bojxona ishl
 Vazifang: foydalanuvchilarga bojxona rasmiylashtiruvi bo'yicha yordam berish:
 - Tovar tavsifi yoki RASMI (invoys, tovar surati, hujjat) asosida TIF TN kodini aniqlash.
 - Bojxona to'lovlarini hisoblash.
+- Tovarga qanday HUJJAT kerakligini aytish (litsenziya, sertifikat, imtiyoz).
 - Import/eksport tartiblari va qonunchilik bo'yicha maslahat.
 
 Agar foydalanuvchi rasm yuborsa — undagi tovar, miqdor, narx kabi ma'lumotlarni
@@ -52,7 +54,8 @@ BOJXONA TO'LOVLARI (GTD kodlari bilan):
 
 QOIDALAR:
 - O'zbek tilida, aniq va lo'nda javob ber (foydalanuvchi boshqa tilda so'rasa, o'sha tilda).
-- Savolga qo'shib "TIF TN BAZASIDAN" va "QONUNCHILIKDAN" bloklari berilishi mumkin.
+- Savolga qo'shib "TIF TN BAZASIDAN", "QONUNCHILIKDAN" va "HUJJAT TALABLARI"
+  bloklari berilishi mumkin.
   Ular — bizning bazamizdan topilgan haqiqiy ma'lumot. Javobingni AVVALO o'shalarga
   asoslantir: ishlatgan kodingni va qonun moddasini ko'rsat
   (masalan: "Bojxona kodeksi, 346-modda").
@@ -63,6 +66,14 @@ QOIDALAR:
 - Bloklarda javob bo'lmasa — buni ochiq ayt ("bazada bu haqda ma'lumot topilmadi")
   va o'z bilimingga tayanayotganingni eslat. Blokdagi ma'lumotni o'ylab topilgan
   modda raqami bilan to'ldirma.
+
+⚠️ HUJJAT TALABLARI HAQIDA:
+  Blokda faqat TIF TN kodiga ANIQ bog'langan talablar bo'ladi. Bo'lim
+  ko'rsatilmagan bo'lsa — "bazada yozuv yo'q", bu "kerak emas" DEGANI EMAS.
+  Masalan "Litsenziya" bo'limi yo'q bo'lsa, "litsenziya talab qilinmaydi"
+  deb qat'iy aytma; "bazada bu kod uchun litsenziya talabi yozilmagan,
+  lekin tovar tavsifiga qarab boshqa hujjat kerak bo'lishi mumkin" de.
+  Har bir talab yonidagi [asos: ...] qonunini javobda ko'rsat.
 
 ⚠️ AKSIZ HAQIDA ALOHIDA OGOHLANTIRISH:
   TIF TN bazasida aksiz stavkalari YO'Q. Kod yonida "aksiz: bu bazada yo'q"
@@ -93,11 +104,13 @@ type Service struct {
 	client *llm.Client
 	codes  *hscode.Store
 	laws   *laws.Store // ixtiyoriy; nil bo'lsa qonun konteksti qo'shilmaydi
+	docs   *docs.Store // ixtiyoriy; hujjat talablari
 }
 
-// New — LLM klienti, TIF TN bazasi va qonun korpusi asosida xizmat yaratadi.
-func New(client *llm.Client, codes *hscode.Store, lawStore *laws.Store) *Service {
-	return &Service{client: client, codes: codes, laws: lawStore}
+// New — LLM klienti, TIF TN bazasi, qonun korpusi va hujjat talablari
+// asosida xizmat yaratadi. lawStore va docStore nil bo'lishi mumkin.
+func New(client *llm.Client, codes *hscode.Store, lawStore *laws.Store, docStore *docs.Store) *Service {
+	return &Service{client: client, codes: codes, laws: lawStore, docs: docStore}
 }
 
 // Available — AI mavjudligini bildiradi.
@@ -134,6 +147,13 @@ QO'LINGDAGI BAZA:
                  Soliq, Ma'muriy va Jinoyat kodekslaridan bojxonaga oid moddalar)`,
 			lm.Docs, lm.Chunks)
 	}
+	if s.docs != nil {
+		dm := s.docs.Meta()
+		fmt.Fprintf(&b, `
+  Hujjat talabi: %d ta qoida — kod oralig'i bo'yicha litsenziya, sertifikat,
+                 imtiyoz va boshqa shartlar (%s holatiga)`,
+			dm.Rules, dm.RulesAsOf)
+	}
 	b.WriteString("\nFoydalanuvchi \"nimalarni bilasan\" deb so'rasa, shu ma'lumotni ayt.")
 	return b.String()
 }
@@ -159,6 +179,14 @@ func (s *Service) withRetrieval(history []llm.Message) []llm.Message {
 	if s.codes != nil {
 		if m := s.codes.Search(last.Content, topCodes); len(m) > 0 {
 			blocks = append(blocks, formatMatches(s.codes.Meta(), m))
+			// Hujjat talablari eng mos kodlar bo'yicha qo'shiladi. Faqat
+			// bir nechtasi — talab matnlari uzun, sakkizta kodniki
+			// kontekstni bosib ketardi.
+			if s.docs != nil {
+				if d := formatDocs(s.docs, m); d != "" {
+					blocks = append(blocks, d)
+				}
+			}
 		}
 	}
 	if s.laws != nil {
@@ -235,6 +263,75 @@ func formatMatches(m hscode.Meta, matches []hscode.Match) string {
 			"289¹–289³-moddalarni tekshiring\" deb ayt, o'zingdan hukm qilma.\n")
 	}
 	b.WriteString("</TIF_TN_BAZASIDAN>")
+	return b.String()
+}
+
+// docCodes — hujjat talablari qidiriladigan kodlar soni.
+// Talab matnlari uzun, shuning uchun faqat eng mos kodlar olinadi.
+const docCodes = 3
+
+// docSections — bo'limlarning o'zbekcha sarlavhalari va tartibi.
+var docSections = []struct{ key, title string }{
+	{"litsenziya", "Litsenziya"},
+	{"sertifikat", "Sertifikat va boshqa tasdiqnomalar"},
+	{"imtiyoz", "Imtiyozlar"},
+	{"boshqa", "Boshqa talablar"},
+	{"tavsif", "Tovar tavsifida ko'rsatilishi shart"},
+}
+
+// formatDocs — topilgan kodlar bo'yicha hujjat talablarini blok qiladi.
+func formatDocs(store *docs.Store, matches []hscode.Match) string {
+	n := docCodes
+	if len(matches) < n {
+		n = len(matches)
+	}
+
+	// Bir nechta kod bir xil oraliqqa tushishi mumkin — takrorlanmasin.
+	seen := map[string]bool{}
+	byCat := map[string][]docs.Requirement{}
+	for _, mt := range matches[:n] {
+		for _, r := range store.For(mt.Code.Code, docs.Import) {
+			key := r.Category + "|" + r.Law + "|" + r.Text
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			byCat[r.Category] = append(byCat[r.Category], r)
+		}
+	}
+	if len(seen) == 0 {
+		return ""
+	}
+
+	var b strings.Builder
+	b.WriteString("<HUJJAT_TALABLARI>\n")
+	fmt.Fprintf(&b, "Eng mos %d ta kod bo'yicha, import rejimi uchun:\n", n)
+	for _, sec := range docSections {
+		rs := byCat[sec.key]
+		if len(rs) == 0 {
+			continue
+		}
+		fmt.Fprintf(&b, "\n%s:\n", sec.title)
+		for _, r := range rs {
+			b.WriteString("  — ")
+			if r.Text != "" {
+				b.WriteString(strings.Join(strings.Fields(r.Text), " "))
+			}
+			if r.Law != "" {
+				fmt.Fprintf(&b, " [asos: %s]", r.Law)
+			}
+			if len(r.Free) > 0 {
+				fmt.Fprintf(&b, " [ozod: %s]", strings.Join(r.Free, ", "))
+			}
+			b.WriteString("\n")
+		}
+	}
+	// Bo'sh bo'limni "talab yo'q" deb aytish uchun ochiq ko'rsatma kerak:
+	// aks holda model ma'lumot yo'qligini "talab yo'q" deb o'qishi mumkin.
+	b.WriteString("\nDIQQAT: yuqorida ko'rsatilmagan bo'lim bo'yicha bazada yozuv yo'q.\n")
+	b.WriteString("Bu \"talab qilinmaydi\" DEGANI EMAS — kodga aniq bog'lanmagan\n")
+	b.WriteString("hujjatlar bu ro'yxatga tushmaydi, lekin rasmiylashtiruvda kerak bo'lishi mumkin.\n")
+	b.WriteString("</HUJJAT_TALABLARI>")
 	return b.String()
 }
 
