@@ -345,3 +345,118 @@ func fakeAI(t *testing.T, body string, status int) *httptest.Server {
 		_, _ = w.Write([]byte(body))
 	}))
 }
+
+// ------------------------------------------------------------------ oqim (SSE)
+
+// sseEvents — javob tanasidan "data:" hodisalarini ajratadi.
+func sseEvents(t *testing.T, body string) []map[string]any {
+	t.Helper()
+	var out []map[string]any
+	for _, line := range strings.Split(body, "\n") {
+		data, ok := strings.CutPrefix(line, "data: ")
+		if !ok {
+			continue
+		}
+		var ev map[string]any
+		if err := json.Unmarshal([]byte(data), &ev); err != nil {
+			t.Errorf("hodisani o'qib bo'lmadi: %q", data)
+			continue
+		}
+		out = append(out, ev)
+	}
+	return out
+}
+
+func TestChatStreamSuccess(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		for _, chunk := range []string{"Bojxona ", "yig'imi ", "412 000"} {
+			_, _ = w.Write([]byte(`data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"` + chunk + `"}}` + "\n\n"))
+		}
+	}))
+	defer srv.Close()
+
+	w, _ := do(t, newServer(t, "kalit", srv.URL), http.MethodPost, "/api/chat/stream",
+		`{"messages":[{"role":"user","content":"traktor"}]}`)
+	wantStatus(t, w, http.StatusOK, "oqim")
+
+	if ct := w.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/event-stream") {
+		t.Errorf("Content-Type = %q; text/event-stream kutilgan", ct)
+	}
+	// Proksilar oqimni buferlab qo'ymasligi uchun.
+	if w.Header().Get("X-Accel-Buffering") != "no" {
+		t.Error("X-Accel-Buffering sarlavhasi yo'q — nginx oqimni buferlab qo'yishi mumkin")
+	}
+
+	events := sseEvents(t, w.Body.String())
+	if len(events) < 2 {
+		t.Fatalf("hodisalar soni %d; kamida 2 kutilgan", len(events))
+	}
+
+	var text string
+	var done bool
+	for _, ev := range events {
+		if s, ok := ev["text"].(string); ok {
+			text += s
+		}
+		if b, ok := ev["done"].(bool); ok && b {
+			done = true
+		}
+	}
+	if text != "Bojxona yig'imi 412 000" {
+		t.Errorf("yig'ilgan matn = %q", text)
+	}
+	if !done {
+		t.Error("tugash hodisasi (done) yuborilmadi")
+	}
+}
+
+// Xato oqim BOSHLANGANDAN keyin chiqsa, HTTP status allaqachon 200.
+// Shuning uchun u hodisa sifatida yetkazilishi kerak — aks holda
+// foydalanuvchi yarim javob olib, nima bo'lganini bilmay qoladi.
+func TestChatStreamMidStreamError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(`data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"boshlandi"}}` + "\n\n"))
+		_, _ = w.Write([]byte(`data: {"type":"error","error":{"message":"limit oshdi"}}` + "\n\n"))
+	}))
+	defer srv.Close()
+
+	w, _ := do(t, newServer(t, "kalit", srv.URL), http.MethodPost, "/api/chat/stream",
+		`{"messages":[{"role":"user","content":"traktor"}]}`)
+	wantStatus(t, w, http.StatusOK, "oqim (status baribir 200)")
+
+	var gotErr string
+	for _, ev := range sseEvents(t, w.Body.String()) {
+		if s, ok := ev["error"].(string); ok {
+			gotErr = s
+		}
+	}
+	if !strings.Contains(gotErr, "limit oshdi") {
+		t.Errorf("xato hodisasi yetkazilmadi: %q", gotErr)
+	}
+}
+
+// Oqim boshlanmasdan xato bo'lsa — oddiy HTTP status ishlatiladi.
+func TestChatStreamWithoutAPIKey(t *testing.T) {
+	w, out := do(t, newServer(t, "", ""), http.MethodPost, "/api/chat/stream",
+		`{"messages":[{"role":"user","content":"salom"}]}`)
+	wantStatus(t, w, http.StatusServiceUnavailable, "kalitsiz oqim")
+	if msg, _ := out["error"].(string); !strings.Contains(msg, "ANTHROPIC_API_KEY") {
+		t.Errorf("xato xabari kalit haqida aytmaydi: %q", msg)
+	}
+}
+
+func TestChatStreamBadInput(t *testing.T) {
+	h := newServer(t, "kalit", "")
+	for name, body := range map[string]string{
+		"xabarsiz":   `{"messages":[]}`,
+		"buzuq JSON": `{"messages":`,
+	} {
+		w, out := do(t, h, http.MethodPost, "/api/chat/stream", body)
+		wantStatus(t, w, http.StatusBadRequest, name)
+		if out["error"] == nil {
+			t.Errorf("%s: xato matni yo'q", name)
+		}
+	}
+}

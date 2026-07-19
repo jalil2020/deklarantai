@@ -36,6 +36,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /api/hscode/search", s.handleHSSearch)
 	mux.HandleFunc("POST /api/duty/calculate", s.handleDutyCalc)
 	mux.HandleFunc("POST /api/chat", s.handleChat)
+	mux.HandleFunc("POST /api/chat/stream", s.handleChatStream)
 	return withCORS(mux)
 }
 
@@ -190,4 +191,83 @@ func withCORS(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// ---- Chat (oqim) ----
+
+// streamTimeout — oqim uchun umumiy chegara. Oddiy chatdan uzunroq:
+// javob bo'lak-bo'lak kelgani uchun foydalanuvchi kutayotganini biladi.
+const streamTimeout = 180 * time.Second
+
+// handleChatStream — javobni Server-Sent Events orqali bo'lak-bo'lak yuboradi.
+//
+// NEGA KERAK: to'liq javob 23–49 soniya oladi. Foydalanuvchi shuncha vaqt
+// bo'sh ekranga qarab turmasligi kerak.
+//
+// Format (SSE):
+//
+//	data: {"text":"bo'lak"}      — javob bo'lagi
+//	data: {"error":"sabab"}      — xato (oqim boshlangandan keyin ham bo'lishi mumkin)
+//	data: {"done":true}          — tugadi
+//
+// DIQQAT: xato oqim BOSHLANGANDAN keyin chiqsa, HTTP status allaqachon 200
+// yuborilgan bo'ladi va uni o'zgartirib bo'lmaydi. Shuning uchun xato
+// hodisa sifatida yuboriladi — mijoz uni ko'rsatishi shart.
+func (s *Server) handleChatStream(w http.ResponseWriter, r *http.Request) {
+	var req chatRequest
+	if err := decode(r, &req); err != nil {
+		writeErr(w, http.StatusBadRequest, "so'rovni o'qib bo'lmadi")
+		return
+	}
+	if len(req.Messages) == 0 {
+		writeErr(w, http.StatusBadRequest, "xabar yo'q")
+		return
+	}
+	if !s.chat.Available() {
+		writeErr(w, http.StatusServiceUnavailable,
+			"AI xizmati sozlanmagan. ANTHROPIC_API_KEY muhit o'zgaruvchisini o'rnating.")
+		return
+	}
+
+	// Oqim uchun javobni bo'lak-bo'lak yuborish imkoni bo'lishi shart.
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		writeErr(w, http.StatusInternalServerError, "server oqimni qo'llab-quvvatlamaydi")
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	// Nginx kabi proksilar oqimni buferlab qo'ymasligi uchun.
+	w.Header().Set("X-Accel-Buffering", "no")
+	w.WriteHeader(http.StatusOK)
+	flusher.Flush()
+
+	ctx, cancel := context.WithTimeout(r.Context(), streamTimeout)
+	defer cancel()
+
+	send := func(v any) error {
+		b, err := json.Marshal(v)
+		if err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintf(w, "data: %s\n\n", b); err != nil {
+			return err
+		}
+		flusher.Flush()
+		return nil
+	}
+
+	err := s.chat.ReplyStream(ctx, req.Messages, func(chunk string) error {
+		return send(map[string]string{"text": chunk})
+	})
+	if err != nil {
+		// Mijoz uzilib ketgan bo'lsa, yozishga urinishning ma'nosi yo'q.
+		if ctx.Err() == nil {
+			_ = send(map[string]string{"error": "AI javob bermadi: " + err.Error()})
+		}
+		return
+	}
+	_ = send(map[string]bool{"done": true})
 }

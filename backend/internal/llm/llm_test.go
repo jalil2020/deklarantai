@@ -142,3 +142,127 @@ func TestCompleteBadJSON(t *testing.T) {
 		t.Errorf("aniq xato kutilgan, oldik: %v", err)
 	}
 }
+
+// sseServer — Anthropic oqimini taqlid qiladigan soxta server.
+func sseServer(t *testing.T, events ...string) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		if req["stream"] != true {
+			t.Error("stream:true yuborilmadi")
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		for _, e := range events {
+			_, _ = w.Write([]byte(e))
+		}
+	}))
+}
+
+// Matn bo'laklari kelib tushishi kerak; boshqa hodisalar e'tiborsiz.
+func TestStreamCollectsTextDeltas(t *testing.T) {
+	srv := sseServer(t,
+		"event: message_start\ndata: {\"type\":\"message_start\"}\n\n",
+		"data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"Sa\"}}\n\n",
+		"event: ping\ndata: {\"type\":\"ping\"}\n\n",
+		"data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"lom\"}}\n\n",
+		"data: {\"type\":\"message_stop\"}\n\n",
+	)
+	defer srv.Close()
+
+	t.Setenv("ANTHROPIC_API_KEY", "k")
+	t.Setenv("ANTHROPIC_API_URL", srv.URL)
+
+	var got []string
+	err := New().Stream(context.Background(), "s", []Message{{Role: "user", Content: "x"}},
+		func(chunk string) error { got = append(got, chunk); return nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(got, "") != "Salom" {
+		t.Errorf("yig'ilgan matn = %q; \"Salom\" kutilgan", strings.Join(got, ""))
+	}
+	// Bo'lak-bo'lak kelishi muhim — bitta bo'lakda kelsa oqimning ma'nosi yo'q.
+	if len(got) != 2 {
+		t.Errorf("bo'laklar soni = %d; 2 kutilgan", len(got))
+	}
+}
+
+// Oqim ICHIDA kelgan xato yo'qolmasligi kerak.
+func TestStreamMidStreamError(t *testing.T) {
+	srv := sseServer(t,
+		"data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"boshi\"}}\n\n",
+		"event: error\ndata: {\"type\":\"error\",\"error\":{\"message\":\"ortiqcha yuklama\"}}\n\n",
+	)
+	defer srv.Close()
+
+	t.Setenv("ANTHROPIC_API_KEY", "k")
+	t.Setenv("ANTHROPIC_API_URL", srv.URL)
+
+	err := New().Stream(context.Background(), "s", []Message{{Role: "user", Content: "x"}},
+		func(string) error { return nil })
+	if err == nil || !strings.Contains(err.Error(), "ortiqcha yuklama") {
+		t.Errorf("oqim ichidagi xato yo'qoldi: %v", err)
+	}
+}
+
+// Oqim BOSHLANMASDAN kelgan xato (HTTP status + JSON tana).
+func TestStreamPreStreamError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"error":{"message":"kalit yaroqsiz"}}`))
+	}))
+	defer srv.Close()
+
+	t.Setenv("ANTHROPIC_API_KEY", "k")
+	t.Setenv("ANTHROPIC_API_URL", srv.URL)
+
+	err := New().Stream(context.Background(), "s", []Message{{Role: "user", Content: "x"}},
+		func(string) error { return nil })
+	if err == nil || !strings.Contains(err.Error(), "kalit yaroqsiz") {
+		t.Errorf("xato matni yo'qoldi: %v", err)
+	}
+}
+
+// onChunk xato qaytarsa — oqim to'xtashi kerak (mijoz uzilib ketgan).
+func TestStreamStopsOnCallbackError(t *testing.T) {
+	srv := sseServer(t,
+		"data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"a\"}}\n\n",
+		"data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"b\"}}\n\n",
+	)
+	defer srv.Close()
+
+	t.Setenv("ANTHROPIC_API_KEY", "k")
+	t.Setenv("ANTHROPIC_API_URL", srv.URL)
+
+	n := 0
+	err := New().Stream(context.Background(), "s", []Message{{Role: "user", Content: "x"}},
+		func(string) error { n++; return errors.New("mijoz ketdi") })
+	if err == nil {
+		t.Fatal("xato kutilgan edi")
+	}
+	if n != 1 {
+		t.Errorf("callback %d marta chaqirildi; 1 dan keyin to'xtashi kerak edi", n)
+	}
+}
+
+// Bo'sh javob sukut deb qabul qilinmasligi kerak.
+func TestStreamEmptyResponse(t *testing.T) {
+	srv := sseServer(t, "data: {\"type\":\"message_stop\"}\n\n")
+	defer srv.Close()
+
+	t.Setenv("ANTHROPIC_API_KEY", "k")
+	t.Setenv("ANTHROPIC_API_URL", srv.URL)
+
+	if err := New().Stream(context.Background(), "s", []Message{{Role: "user", Content: "x"}},
+		func(string) error { return nil }); err == nil {
+		t.Error("bo'sh javobda xato kutilgan edi")
+	}
+}
+
+func TestStreamWithoutKey(t *testing.T) {
+	t.Setenv("ANTHROPIC_API_KEY", "")
+	if err := New().Stream(context.Background(), "s", nil, func(string) error { return nil }); !errors.Is(err, ErrNoAPIKey) {
+		t.Errorf("ErrNoAPIKey kutilgan: %v", err)
+	}
+}

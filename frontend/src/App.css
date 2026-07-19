@@ -284,3 +284,24 @@
   vertical-align: top;
 }
 .md-table th { background: rgba(127, 127, 127, 0.09); font-weight: 600; white-space: nowrap; }
+
+/* ---------------------------------------------------------- oqim (streaming) */
+/* Javob oqib kelayotganda oxirida miltillovchi kursor — foydalanuvchi
+   matn davom etishini ko'rib turadi. */
+.bubble.streaming .bubble-text > :last-child::after {
+  content: '';
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: var(--ink-soft, currentColor);
+  animation: caret 1s steps(1) infinite;
+}
+@keyframes caret {
+  0%, 50% { opacity: 1; }
+  50.01%, 100% { opacity: 0; }
+}
+
+.round-btn.stop { background: var(--danger); color: #fff; }
+.round-btn.stop:hover { opacity: 0.9; }

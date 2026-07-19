@@ -3,6 +3,7 @@
 package llm
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -11,6 +12,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -84,6 +86,37 @@ type apiRequest struct {
 	MaxTokens int          `json:"max_tokens"`
 	System    string       `json:"system,omitempty"`
 	Messages  []apiMessage `json:"messages"`
+	Stream    bool         `json:"stream,omitempty"`
+}
+
+const maxTokens = 2048
+
+// buildRequest — so'rov tanasini yig'adi. Complete va Stream uchun umumiy,
+// shunda ikkalasi bir xil model, limit va kontekst bilan ishlaydi.
+func (c *Client) buildRequest(system string, history []Message, stream bool) ([]byte, error) {
+	msgs := make([]apiMessage, 0, len(history))
+	for _, m := range history {
+		msgs = append(msgs, apiMessage{Role: m.Role, Content: buildContent(m)})
+	}
+	return json.Marshal(apiRequest{
+		Model:     c.model,
+		MaxTokens: maxTokens,
+		System:    system,
+		Messages:  msgs,
+		Stream:    stream,
+	})
+}
+
+// newHTTPRequest — sarlavhalari qo'yilgan POST so'rov.
+func (c *Client) newHTTPRequest(ctx context.Context, body []byte) (*http.Request, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.url, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("x-api-key", c.apiKey)
+	req.Header.Set("anthropic-version", apiVersion)
+	return req, nil
 }
 
 // apiMessage.Content matn (string) yoki bloklar ro'yxati (any) bo'lishi mumkin.
@@ -147,28 +180,14 @@ func (c *Client) Complete(ctx context.Context, system string, history []Message)
 		return "", ErrNoAPIKey
 	}
 
-	msgs := make([]apiMessage, 0, len(history))
-	for _, m := range history {
-		msgs = append(msgs, apiMessage{Role: m.Role, Content: buildContent(m)})
-	}
-
-	body, err := json.Marshal(apiRequest{
-		Model:     c.model,
-		MaxTokens: 2048,
-		System:    system,
-		Messages:  msgs,
-	})
+	body, err := c.buildRequest(system, history, false)
 	if err != nil {
 		return "", err
 	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.url, bytes.NewReader(body))
+	req, err := c.newHTTPRequest(ctx, body)
 	if err != nil {
 		return "", err
 	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("x-api-key", c.apiKey)
-	req.Header.Set("anthropic-version", apiVersion)
 
 	resp, err := c.http.Do(req)
 	if err != nil {
@@ -195,4 +214,107 @@ func (c *Client) Complete(ctx context.Context, system string, history []Message)
 		}
 	}
 	return text, nil
+}
+
+// ---------------------------------------------------------------- streaming
+
+// StreamFunc — javobning har bir bo'lagi kelganda chaqiriladi.
+// Xato qaytarsa, oqim to'xtatiladi (masalan foydalanuvchi ketib qolgan).
+type StreamFunc func(chunk string) error
+
+// streamEvent — SSE hodisasining bizga kerakli qismi.
+//
+// Anthropic oqimi bir necha turdagi hodisa yuboradi (message_start,
+// content_block_start, ping, message_stop...). Bizga faqat matn bo'laklari
+// kerak: type="content_block_delta", delta.type="text_delta".
+type streamEvent struct {
+	Type  string `json:"type"`
+	Delta struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	} `json:"delta"`
+	Error *struct {
+		Message string `json:"message"`
+	} `json:"error"`
+}
+
+// Stream — javobni bo'lak-bo'lak qaytaradi.
+//
+// NEGA KERAK: to'liq javob 23–49 soniya oladi. Foydalanuvchi shuncha vaqt
+// bo'sh ekranga qarab turmasligi uchun matn yozilayotganda ko'rsatiladi.
+//
+// Xatolar ikki joyda chiqishi mumkin: oqim BOSHLANISHIDAN oldin (HTTP
+// status va JSON xato tanasi) va oqim ICHIDA (event: error). Ikkalasi ham
+// qayta ishlanadi — aks holda foydalanuvchi yarim javob olib, nima
+// bo'lganini bilmay qolardi.
+func (c *Client) Stream(ctx context.Context, system string, history []Message, onChunk StreamFunc) error {
+	if !c.Available() {
+		return ErrNoAPIKey
+	}
+	body, err := c.buildRequest(system, history, true)
+	if err != nil {
+		return err
+	}
+	req, err := c.newHTTPRequest(ctx, body)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Accept", "text/event-stream")
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	// Oqim boshlanmasdan xato qaytgan bo'lsa — tana oddiy JSON.
+	if resp.StatusCode != http.StatusOK {
+		raw, _ := io.ReadAll(resp.Body)
+		var out apiResponse
+		if json.Unmarshal(raw, &out) == nil && out.Error != nil {
+			return fmt.Errorf("API xatosi: %s", out.Error.Message)
+		}
+		return fmt.Errorf("API status %d: %s", resp.StatusCode, string(raw))
+	}
+
+	sc := bufio.NewScanner(resp.Body)
+	// Bo'laklar kichik, lekin bitta hodisa uzun bo'lib qolsa oqim
+	// jim uzilib qolmasligi uchun buferni kengaytiramiz.
+	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+
+	var got bool
+	for sc.Scan() {
+		line := sc.Text()
+		// SSE: bizga faqat "data:" qatorlari kerak, "event:" va bo'sh
+		// qatorlar tashlab yuboriladi.
+		data, ok := strings.CutPrefix(line, "data: ")
+		if !ok {
+			continue
+		}
+		if data == "[DONE]" {
+			break
+		}
+		var ev streamEvent
+		if err := json.Unmarshal([]byte(data), &ev); err != nil {
+			continue // noma'lum hodisa — e'tiborsiz qoldiramiz
+		}
+		if ev.Error != nil {
+			return fmt.Errorf("API xatosi: %s", ev.Error.Message)
+		}
+		if ev.Type != "content_block_delta" || ev.Delta.Type != "text_delta" || ev.Delta.Text == "" {
+			continue
+		}
+		got = true
+		if err := onChunk(ev.Delta.Text); err != nil {
+			return err
+		}
+	}
+	if err := sc.Err(); err != nil {
+		return fmt.Errorf("oqim uzildi: %w", err)
+	}
+	// Hech narsa kelmasa, chaqiruvchi buni sukut deb o'ylamasligi kerak.
+	if !got {
+		return errors.New("API bo'sh javob qaytardi")
+	}
+	return nil
 }

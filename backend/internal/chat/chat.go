@@ -176,6 +176,14 @@ func (s *Service) Reply(ctx context.Context, history []llm.Message) (string, err
 	return s.client.Complete(ctx, s.systemPrompt(), s.withRetrieval(history))
 }
 
+// ReplyStream — javobni bo'lak-bo'lak qaytaradi (SSE uchun).
+//
+// Retrieval Reply bilan bir xil — farqi faqat javobning yetkazilishida,
+// shuning uchun ikkala yo'l ham bir xil kontekst va ko'rsatma bilan ishlaydi.
+func (s *Service) ReplyStream(ctx context.Context, history []llm.Message, onChunk llm.StreamFunc) error {
+	return s.client.Stream(ctx, s.systemPrompt(), s.withRetrieval(history), onChunk)
+}
+
 // withRetrieval — oxirgi foydalanuvchi savoliga mos TIF TN kodlari va qonun
 // parchalarini topib, uning matniga qo'shib qo'yadi.
 // Asl tarix o'zgartirilmaydi (nusxa qaytariladi).

@@ -229,6 +229,27 @@ yo'naltiriladi (Vite proxy).
 | POST  | `/api/hscode/search`    | `{query, use_ai}` → mos kodlar      |
 | POST  | `/api/duty/calculate`   | `{customs_value, import_duty, excise, vat, quantity}` → hisob-kitob |
 | POST  | `/api/chat`             | `{messages: [{role, content, images?}]}` → AI javobi (rasm: `images:[{media_type, data(base64)}]`) |
+| POST  | `/api/chat/stream`      | Xuddi shu, lekin javob **oqim** (SSE) bo'lib keladi |
+
+### Oqim (SSE)
+
+Frontend `/api/chat/stream` ni ishlatadi. Sabab: to'liq javob **23–49 soniya**
+oladi, birinchi bo'lak esa **~1,5 soniyada** keladi. Foydalanuvchi bo'sh
+ekranga qarab turmaydi.
+
+```
+data: {"text":"bo'lak"}    — javob bo'lagi
+data: {"error":"sabab"}    — xato
+data: {"done":true}        — tugadi
+```
+
+⚠️ Xato oqim **boshlangandan keyin** ham chiqishi mumkin — o'shanda HTTP
+status allaqachon 200 bo'lgan va uni o'zgartirib bo'lmaydi. Shuning uchun
+xato hodisa sifatida yuboriladi; mijoz uni albatta ko'rsatishi kerak, aks
+holda foydalanuvchi yarim javob olib, nima bo'lganini bilmay qoladi.
+
+`X-Accel-Buffering: no` sarlavhasi qo'yiladi — busiz nginx kabi proksilar
+oqimni buferlab qo'yadi va butun foyda yo'qoladi.
 
 ### Namuna: boj hisoblash
 
@@ -311,7 +332,7 @@ Bular bilib turib qoldirilgan — ishlatishdan oldin hisobga olish kerak.
 - [x] `chat`, `api` va `llm` paketlari test bilan qoplandi (71 test).
       LLM so'rovlari `ANTHROPIC_API_URL` orqali soxta serverga yo'naltiriladi,
       shuning uchun testlar tarmoqqa chiqmaydi va kalit talab qilmaydi.
-- [ ] Frontendda (689 qator) test yo'q.
+- [ ] Frontendda test yo'q (Markdown.tsx va oqim mantig'i ayniqsa muhim).
 - [ ] **Javob har doim bir xil emas.** `temperature` ni pasaytirib bo'lmaydi
       (bu modelda qo'llab-quvvatlanmaydi), shuning uchun barqarorlik faqat
       kontekstni aniq yozish bilan ta'minlanadi. Sinovda uch urinishning

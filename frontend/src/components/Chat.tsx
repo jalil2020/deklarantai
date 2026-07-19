@@ -158,6 +158,8 @@ export default function Chat({ aiAvailable }: Props) {
   const [error, setError] = useState('')
   const [dragOver, setDragOver] = useState(false)
   const [listening, setListening] = useState(false)
+  // Ketayotgan oqimni to'xtatish uchun.
+  const abortRef = useRef<AbortController | null>(null)
   const endRef = useRef<HTMLDivElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const taRef = useRef<HTMLTextAreaElement>(null)
@@ -196,14 +198,52 @@ export default function Chat({ aiAvailable }: Props) {
     setInput('')
     setPending([])
     setLoading(true)
+
+    // Javob bo'lak-bo'lak keladi. Bo'sh assistant xabarini darrov qo'shamiz
+    // va uni to'ldirib boramiz — shunda foydalanuvchi 40 soniya bo'sh
+    // ekranga qarab turmaydi.
+    setMessages([...next, { role: 'assistant', content: '' }])
+
+    const ctrl = new AbortController()
+    abortRef.current = ctrl
+
+    // Har bo'lakda setMessages chaqirsak, React juda ko'p qayta chizadi.
+    // Matnni to'plab, kadr chastotasida yangilaymiz.
+    let acc = ''
+    let queued = false
+    const flush = () => {
+      queued = false
+      setMessages([...next, { role: 'assistant', content: acc }])
+    }
+
     try {
-      const res = await api.chat(next)
-      setMessages([...next, { role: 'assistant', content: res.reply }])
+      await api.chatStream(next, (chunk) => {
+        acc += chunk
+        if (!queued) {
+          queued = true
+          requestAnimationFrame(flush)
+        }
+      }, ctrl.signal)
+      flush()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Xatolik')
+      if (ctrl.signal.aborted) {
+        // Foydalanuvchi to'xtatdi — kelgan qismi qoladi, xato ko'rsatilmaydi.
+        flush()
+      } else {
+        setError(err instanceof Error ? err.message : 'Xatolik')
+        // Yarim javob qolib ketmasin: hech narsa kelmagan bo'lsa,
+        // bo'sh pufakni olib tashlaymiz.
+        setMessages(acc ? [...next, { role: 'assistant', content: acc }] : next)
+      }
     } finally {
+      abortRef.current = null
       setLoading(false)
     }
+  }
+
+  // To'xtatish — uzun javob kerak bo'lmay qolsa.
+  function stop() {
+    abortRef.current?.abort()
   }
 
   function submit(e?: React.FormEvent) {
@@ -270,7 +310,13 @@ export default function Chat({ aiAvailable }: Props) {
       ) : (
         <div className="chat-window">
           {messages.map((m, i) => (
-            <div key={i} className={`bubble ${m.role}`}>
+            // Bo'sh javob pufagi chizilmasin: oqim boshlanishini kutayotgan
+            // paytda o'rniga "yozilmoqda" nuqtalari ko'rinadi.
+            !m.content && !m.images?.length ? null : (
+            // Oxirgi javob hali oqib kelayotgan bo'lsa — kursor ko'rsatamiz.
+            <div key={i} className={`bubble ${m.role}${
+              loading && i === messages.length - 1 && m.role === 'assistant' ? ' streaming' : ''
+            }`}>
               {m.images?.map((img, j) => (
                 <img key={j} className="bubble-img" src={`data:${img.media_type};base64,${img.data}`} alt="rasm" />
               ))}
@@ -283,8 +329,11 @@ export default function Chat({ aiAvailable }: Props) {
                 </div>
               )}
             </div>
+            )
           ))}
-          {loading && (
+          {/* Nuqtalar faqat birinchi bo'lak kelgunicha — undan keyin
+              matnning o'zi ko'rinib turadi. */}
+          {loading && messages[messages.length - 1]?.content === '' && (
             <div className="bubble assistant typing"><span></span><span></span><span></span></div>
           )}
           <div ref={endRef} />
@@ -339,7 +388,13 @@ export default function Chat({ aiAvailable }: Props) {
           </div>
           <div className="send-group">
             <button className={`round-btn mic ${listening ? 'on' : ''}`} onClick={toggleVoice} title="Ovozli kiritish" type="button">🎙️</button>
-            <button className="round-btn send" onClick={() => submit()} disabled={!canSend} title="Yuborish" type="button">➤</button>
+            {/* Javob oqayotganda yuborish o'rniga to'xtatish — uzun javob
+                kerak bo'lmay qolsa, foydalanuvchi kutib turmasin. */}
+            {loading ? (
+              <button className="round-btn stop" onClick={stop} title="To'xtatish" type="button">■</button>
+            ) : (
+              <button className="round-btn send" onClick={() => submit()} disabled={!canSend} title="Yuborish" type="button">➤</button>
+            )}
           </div>
         </div>
       </div>

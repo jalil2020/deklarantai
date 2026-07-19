@@ -83,6 +83,68 @@ export const api = {
     post<DutyResult>('/api/duty/calculate', req),
   chat: (messages: ChatMessage[]) =>
     post<{ reply: string }>('/api/chat', { messages }),
+  chatStream,
+}
+
+/**
+ * Javobni bo'lak-bo'lak oladi (Server-Sent Events).
+ *
+ * NEGA KERAK: to'liq javob 23–49 soniya oladi. Foydalanuvchi shuncha vaqt
+ * bo'sh ekranga qarab turmasligi uchun matn yozilayotganda ko'rsatiladi.
+ *
+ * DIQQAT: xato oqim BOSHLANGANDAN keyin ham kelishi mumkin — o'shanda HTTP
+ * status allaqachon 200 bo'lgan bo'ladi. Shuning uchun xato hodisa sifatida
+ * keladi va uni tashlab yuborish kerak emas, aks holda foydalanuvchi yarim
+ * javob olib, nima bo'lganini bilmay qolardi.
+ *
+ * `signal` — suhbatni to'xtatish uchun (foydalanuvchi bekor qilsa).
+ */
+async function chatStream(
+  messages: ChatMessage[],
+  onChunk: (text: string) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  const res = await fetch('/api/chat/stream', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ messages }),
+    signal,
+  })
+
+  // Oqim boshlanmasdan xato bo'lsa — javob oddiy JSON.
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}))
+    throw new Error((data as { error?: string }).error || `Xato: ${res.status}`)
+  }
+  if (!res.body) throw new Error('Brauzer oqimni qo\'llab-quvvatlamaydi')
+
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  // Bo'lak SSE hodisasi o'rtasida kelishi mumkin, shuning uchun to'liq
+  // bo'lmagan qatorni keyingi bo'lakka qoldiramiz.
+  let buf = ''
+
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buf += decoder.decode(value, { stream: true })
+
+    const lines = buf.split('\n')
+    buf = lines.pop() ?? ''
+
+    for (const line of lines) {
+      if (!line.startsWith('data: ')) continue
+      let ev: { text?: string; error?: string; done?: boolean }
+      try {
+        ev = JSON.parse(line.slice(6))
+      } catch {
+        continue
+      }
+      if (ev.error) throw new Error(ev.error)
+      if (ev.done) return
+      if (ev.text) onChunk(ev.text)
+    }
+  }
 }
 
 // Summa formatlash (so'mda).
