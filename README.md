@@ -1,17 +1,19 @@
 # 🛃 Deklarant AI
 
-O'zbekiston bojxona rasmiylashtiruvi uchun AI yordamchi. Asosiy interfeys — **chat**,
-qo'shimcha strukturaviy vositalar bilan:
+O'zbekiston bojxona rasmiylashtiruvi uchun AI yordamchi. Yagona interfeys — **chat**.
 
-1. **💬 Chat (asosiy)** — bojxona kod, boj va qonunchilik bo'yicha suhbat.
+1. **💬 Chat** — bojxona kod, boj va qonunchilik bo'yicha suhbat.
    **Rasm o'qiydi**: tovar surati yoki invoysni yuklang — AI (Claude vision) undagi tovar,
    miqdor va narxni o'qib, TIF TN kodini taklif qiladi va bojni hisoblab beradi.
    Rasm tanlash, nusxa-joylash (paste) yoki sudrab tashlash (drag & drop) mumkin.
-2. **🧮 Kalkulyator** — import boji, aksiz, QQS va bojxona yig'imini aniq hisoblaydi.
-3. **🔎 HS kod** — tovar nomiga qarab TIF TN kodini qidiradi (ixtiyoriy AI izohi bilan).
+Boj hisoblash va kod qidirish AI ning o'zi orqali, suhbat ichida bajariladi —
+alohida kalkulyator yoki qidiruv oynasi yo'q. Ular backendda API sifatida
+qoladi (`/api/duty/calculate`, `/api/hscode/search`), lekin frontendda faqat
+chat bor.
 
-> ⚠️ **Demo:** Kodlar bazasi va stavkalar namunaviy. Ishlab chiqarishda rasmiy TIF TN
-> jadvali va joriy stavkalar bilan almashtirilishi kerak (manba: [customs.uz](https://customs.uz)).
+> ⚠️ Stavkalar baza olingan sanaga tegishli va o'zgarib turadi. Muhim
+> qarorlar uchun [customs.uz](https://customs.uz) yoki bojxona brokeridan
+> tasdiqlash kerak.
 
 ## Texnologiyalar
 
@@ -27,7 +29,8 @@ qo'shimcha strukturaviy vositalar bilan:
 Deklarant AI/
 ├── backend/                  # Go REST API
 │   ├── main.go
-│   ├── data/hscodes.json     # namunaviy TIF TN bazasi
+│   ├── data/hscodes.json     # TIF TN bazasi (13 142 kod)
+│   ├── data/laws.json        # qonun korpusi (1 045 parcha)
 │   └── internal/
 │       ├── api/              # HTTP handlerlar + CORS
 │       ├── hscode/           # kod qidiruv
@@ -37,7 +40,7 @@ Deklarant AI/
 └── frontend/                 # React SPA
     └── src/
         ├── api.ts            # backend klienti
-        └── components/       # Chat (rasm yuklash), DutyCalculator, HSCodeSearch
+        └── components/Chat.tsx   # yagona komponent (rasm yuklash bilan)
 ```
 
 ## Ma'lumotlar bazasi (TIF TN)
@@ -171,17 +174,57 @@ curl -X POST http://localhost:8080/api/duty/calculate \
 ## Hisoblash metodikasi
 
 ```
-Import boj = Bojxona qiymati × boj%
-Aksiz      = (Bojxona qiymati + Import boj) × aksiz%
-QQS        = (Bojxona qiymati + Import boj + Aksiz) × QQS%
-Jami       = Bojxona yig'imi + Import boj + Aksiz + QQS
+Bojxona qiymati (TQ) = (faktura qiymati + transport) × valyuta kursi
+
+Yig'im (10) = BRV(sana) × karra(TQ ning dollardagi ekvivalenti)   -> PKM 55
+Boj    (20) = TQ × boj%
+Aksiz  (27) = TQ × aksiz%                    -> Soliq kodeksi 285-modda
+QQS    (29) = (TQ + boj + qo'shimcha boj + aksiz) × QQS%  -> SK 254-modda
+Jami        = Yig'im + Boj + Aksiz + QQS
 ```
 
-## Keyingi qadamlar (rivojlantirish g'oyalari)
+Ikkita nozik joy — ikkalasi ham qonun matnidan olingan:
 
-- [ ] Rasmiy TIF TN bazasini to'liq import qilish (10 raqamli barcha kodlar)
-- [ ] Aksiz uchun qat'iy stavkalar (so'm/dona) va valyuta konvertatsiyasi
-- [ ] AI qidiruvni RAG bilan kuchaytirish (bojxona kodeksi hujjatlari asosida)
-- [ ] Foydalanuvchi hisobi va hisob-kitoblar tarixi
-- [ ] GTD (yuk bojxona deklaratsiyasi) grafalarini to'ldirishga yordam
+- **Aksiz bazasiga boj QO'SHILMAYDI** (SK 285-modda: advalor stavkada baza —
+  bojxona qiymati). Ko'p manbalarda `(TQ + boj) × aksiz%` deb yozilgan, bu xato.
+- **QQS bazasiga bojxona yig'imi KIRMAYDI** (SK 254-modda).
+
+Yig'im qat'iy summa emas — bojxona qiymatining dollardagi ekvivalentiga qarab
+BRV ning 1 dan 25 karragacha oralig'ida (ПКМ 55, 31.01.2025).
+
+## Ma'lum kamchiliklar
+
+Bular bilib turib qoldirilgan — ishlatishdan oldin hisobga olish kerak.
+
+**Hisoblashda:**
+
+- [ ] **Aksizning qat'iy va kombinatsiyalangan stavkalari.** `Calculate` aksizni
+      faqat foizda oladi. Aroq, sigaret, benzin kabi tovarlarda stavka qat'iy
+      summa (so'm/litr, so'm/1000 dona) — bunday tovarni kalkulyator hisoblay
+      olmaydi. Chat AI ni bundan ogohlantiradi, lekin API ogohlantirmaydi.
+- [ ] **Utilizatsiya yig'imi (79)** — avtotransport uchun, netto vazn bo'yicha.
+      Umuman qo'llab-quvvatlanmaydi.
+- [ ] **Qo'shimcha boj (21)** — qaysi hollarda qo'llanishi tekshirilmagan.
+- [ ] Kalkulyator manba ning o'z natijasi bilan solishtirilmagan.
+
+**Ma'lumotda:**
+
+- [ ] **Aksiz stavkalari TIF TN kodiga bog'lanmagan** va bog'lab bo'lmaydi:
+      Soliq kodeksi 289¹–289³-moddalari stavkalarni TOVAR NOMI bo'yicha
+      beradi. 13 142 kodning birontasida aksiz yo'q (`excise` maydoni umuman
+      yozilmaydi — "0%" deb yozib qo'yish yolg'on bo'lardi).
+- [ ] Qonun korpusining 22% i lex.uz havolasisiz (74 hujjat).
+- [ ] `DateFinish` hujjat amaldaligi uchun ishonchli belgi emas — ayrim eski
+      hujjatlarda ham bo'sh turadi.
+
+**Qidiruvda:**
+
+- [ ] Kalit so'z qidiruvi sinonimni tushunmaydi: `aroq` so'rovi alkogol
+      moddasini 14-o'ringa tushiradi, `noutbuk` esa umuman topilmaydi.
+      Yechimi — embedding (vektor) qidiruvi.
+
+**Sinovda:**
+
+- [ ] **Chat haqiqiy `ANTHROPIC_API_KEY` bilan hech qachon ishga tushirilmagan.**
+      `chat` va `api` paketlarida test yo'q.
 ```
