@@ -193,6 +193,23 @@ go run .
 Server `http://localhost:8080` da ishga tushadi. Kalit o'rnatilmasa, HS qidiruv
 va kalkulyator ishlaydi, faqat chat o'chiq bo'ladi.
 
+| Muhit o'zgaruvchisi | Majburiy | Tavsif |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | chat uchun | Bo'lmasa chat o'chiq, qolgani ishlaydi |
+| `ANTHROPIC_MODEL` | yo'q | Sukut bo'yicha `claude-opus-4-8` |
+| `ANTHROPIC_API_URL` | yo'q | Korporativ shlyuz yoki testdagi soxta server |
+| `PORT` | yo'q | Sukut bo'yicha `8080` |
+| `HSCODE_DATA`, `LAWS_DATA`, `DOCS_DATA` | yo'q | Ma'lumot fayllari yo'li |
+
+### Testlar
+
+```bash
+cd backend && go test ./... -cover
+```
+
+Testlar tarmoqqa chiqmaydi: LLM so'rovlari `ANTHROPIC_API_URL` orqali
+`httptest` serveriga yo'naltiriladi, shuning uchun API kaliti kerak emas.
+
 ### 2. Frontend (React)
 
 ```bash
@@ -291,8 +308,10 @@ Bular bilib turib qoldirilgan — ishlatishdan oldin hisobga olish kerak.
 
 - [x] Chat haqiqiy `ANTHROPIC_API_KEY` bilan sinaldi (2026-07-19): kod
       qidirish, boj/QQS/yig'im hisobi va lex.uz havolasi ishlaydi.
-- [ ] `chat` va `api` paketlarida avtomatik test yo'q — sinov qo'lda
-      qilingan.
+- [x] `chat`, `api` va `llm` paketlari test bilan qoplandi (71 test).
+      LLM so'rovlari `ANTHROPIC_API_URL` orqali soxta serverga yo'naltiriladi,
+      shuning uchun testlar tarmoqqa chiqmaydi va kalit talab qilmaydi.
+- [ ] Frontendda (689 qator) test yo'q.
 - [ ] **Javob har doim bir xil emas.** `temperature` ni pasaytirib bo'lmaydi
       (bu modelda qo'llab-quvvatlanmaydi), shuning uchun barqarorlik faqat
       kontekstni aniq yozish bilan ta'minlanadi. Sinovda uch urinishning

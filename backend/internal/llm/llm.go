@@ -15,9 +15,9 @@ import (
 )
 
 const (
-	apiURL       = "https://api.anthropic.com/v1/messages"
-	apiVersion   = "2023-06-01"
-	defaultModel = "claude-opus-4-8"
+	defaultAPIURL = "https://api.anthropic.com/v1/messages"
+	apiVersion    = "2023-06-01"
+	defaultModel  = "claude-opus-4-8"
 )
 
 // ErrNoAPIKey — API kaliti sozlanmagan.
@@ -27,19 +27,29 @@ var ErrNoAPIKey = errors.New("ANTHROPIC_API_KEY sozlanmagan")
 type Client struct {
 	apiKey string
 	model  string
+	url    string
 	http   *http.Client
 }
 
 // New — muhit o'zgaruvchilaridan klient yaratadi.
-// ANTHROPIC_API_KEY majburiy; ANTHROPIC_MODEL ixtiyoriy.
+//
+//	ANTHROPIC_API_KEY — majburiy (bo'lmasa chat o'chiq)
+//	ANTHROPIC_MODEL   — ixtiyoriy
+//	ANTHROPIC_API_URL — ixtiyoriy: so'rovlar korporativ shlyuz orqali
+//	                    yuborilsa yoki testda soxta server ishlatilsa
 func New() *Client {
 	model := os.Getenv("ANTHROPIC_MODEL")
 	if model == "" {
 		model = defaultModel
 	}
+	url := os.Getenv("ANTHROPIC_API_URL")
+	if url == "" {
+		url = defaultAPIURL
+	}
 	return &Client{
 		apiKey: os.Getenv("ANTHROPIC_API_KEY"),
 		model:  model,
+		url:    url,
 		http:   &http.Client{Timeout: 120 * time.Second},
 	}
 }
@@ -152,7 +162,7 @@ func (c *Client) Complete(ctx context.Context, system string, history []Message)
 		return "", err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.url, bytes.NewReader(body))
 	if err != nil {
 		return "", err
 	}
