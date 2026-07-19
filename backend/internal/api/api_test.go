@@ -594,3 +594,42 @@ func TestDutyExplicitRateSkipsCBU(t *testing.T) {
 		t.Errorf("kurs berilgan, lekin tashqi xizmatga %d marta murojaat qilindi", hits)
 	}
 }
+
+// ------------------------------------------------------------ utilizatsiya
+
+func TestUtilFeeEndpoint(t *testing.T) {
+	h := newServer(t, "", "")
+
+	// 2 litrli yangi avtomobil: 120 BRV × 412 000 = 49 440 000
+	w, out := do(t, h, http.MethodPost, "/api/utilfee/calculate",
+		`{"date":"2026-07-19T00:00:00Z","code":"8703 23 194 0","measure":2000,"age_years":1}`)
+	wantStatus(t, w, http.StatusOK, "utilizatsiya yig'imi")
+
+	if amt, _ := out["amount"].(float64); amt != 49_440_000 {
+		t.Errorf("summa = %v; 49 440 000 kutilgan", out["amount"])
+	}
+	if cat, _ := out["category"].(string); !strings.Contains(cat, "Yengil") {
+		t.Errorf("toifa = %v", out["category"])
+	}
+}
+
+// O'lchov berilmasa — nimani so'rash kerakligi aytilishi kerak.
+func TestUtilFeeAsksMeasure(t *testing.T) {
+	w, out := do(t, newServer(t, "", ""), http.MethodPost, "/api/utilfee/calculate",
+		`{"date":"2026-07-19T00:00:00Z","code":"8703 23 194 0","age_years":1}`)
+	wantStatus(t, w, http.StatusOK, "o'lchovsiz so'rov")
+
+	if m, _ := out["needs_measure"].(string); !strings.Contains(m, "sm³") {
+		t.Errorf("needs_measure = %v; dvigatel hajmi kutilgan", out["needs_measure"])
+	}
+}
+
+// Ro'yxatda yo'q kod — 400 va sabab, jim 0 emas.
+func TestUtilFeeUnknownCodeEndpoint(t *testing.T) {
+	w, out := do(t, newServer(t, "", ""), http.MethodPost, "/api/utilfee/calculate",
+		`{"code":"6109 10 000 0"}`)
+	wantStatus(t, w, http.StatusBadRequest, "ro'yxatda yo'q kod")
+	if msg, _ := out["error"].(string); !strings.Contains(msg, "ПКМ 347") {
+		t.Errorf("xato huquqiy asosni ko'rsatmaydi: %q", msg)
+	}
+}

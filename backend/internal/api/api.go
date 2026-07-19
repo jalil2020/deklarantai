@@ -48,6 +48,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /api/health", s.handleHealth)
 	mux.HandleFunc("POST /api/hscode/search", s.handleHSSearch)
 	mux.HandleFunc("POST /api/duty/calculate", s.handleDutyCalc)
+	mux.HandleFunc("POST /api/utilfee/calculate", s.handleUtilFee)
 	mux.HandleFunc("POST /api/chat", s.handleChat)
 	mux.HandleFunc("POST /api/chat/stream", s.handleChatStream)
 	// Tartib muhim: CORS eng tashqarida bo'lishi kerak, aks holda
@@ -182,6 +183,28 @@ func (s *Server) handleDutyCalc(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, duty.Calculate(req))
+}
+
+// ---- Utilizatsiya yig'imi (79) ----
+
+// handleUtilFee — ПКМ 347 bo'yicha utilizatsiya yig'imi.
+//
+// Alohida endpoint, chunki kirish ma'lumotlari boshqacha: TIF TN kodi,
+// dvigatel hajmi yoki quvvat yoki to'la vazn, va texnikaning yoshi.
+func (s *Server) handleUtilFee(w http.ResponseWriter, r *http.Request) {
+	var req duty.UtilFeeRequest
+	if err := decode(r, &req); err != nil {
+		writeErr(w, http.StatusBadRequest, "so'rovni o'qib bo'lmadi")
+		return
+	}
+	res, err := duty.UtilizationFee(req)
+	if err != nil {
+		// Ro'yxatda yo'q kod yoki noma'lum stavka — bu 400: javob berish
+		// uchun ma'lumot yetishmaydi, server nosozligi emas.
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
 }
 
 // ---- Chat ----

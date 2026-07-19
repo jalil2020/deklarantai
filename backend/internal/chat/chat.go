@@ -66,7 +66,16 @@ BOJXONA TO'LOVLARI (GTD kodlari bilan):
       natural miqdor — masalan "340 000 so'm / 1000 dona")
   29. QQS = (bojxona qiymati + boj + qo'shimcha boj + aksiz) × QQS%
       (Soliq kodeksi 254-modda. DIQQAT: bojxona yig'imi QQS bazasiga KIRMAYDI.)
-  79. Utilizatsiya yig'imi — avtotransport uchun, netto vazn bo'yicha (alohida qoida).
+  79. Utilizatsiya yig'imi — avtotransport va o'ziyurar mashinalar uchun
+      (ПКМ 347, 02.06.2020). BRV karrasida, IKKI omilga bog'liq:
+        • o'lchov — dvigatel hajmi (sm³), quvvat (kVt yoki ot kuchi)
+          yoki to'la vazn (tonna); qaysi biri kerakligi toifaga qarab
+        • texnikaning yoshi — 3 yildan ortiqmi yoki yo'q
+      Ko'p toifada YANGI texnikaga stavka belgilanmagan (yig'im yo'q),
+      eskisiga esa bor. Bu yig'im ko'pincha boj va QQS dan KATTA:
+      masalan 2 litrli avtomobil uchun 120 BRV ≈ 49 mln so'm.
+      Kod yonida "⚠️ UTILIZATSIYA YIG'IMI" yozilgan bo'lsa — kerakli
+      o'lchov va yoshni SO'RA, keyin hisobla. Uni tushirib qoldirma.
 
   Bojxona qiymati = (faktura qiymati + transport xarajati) × valyuta kursi.
 
@@ -418,6 +427,16 @@ func formatMatches(m hscode.Meta, matches []hscode.Match, exempt map[string][]st
 			fmt.Fprintf(&b, " | qo'shimcha o'lchov: %s", c.Unit)
 		}
 		b.WriteString("\n")
+		// Utilizatsiya yig'imi (79) — avtotransport va o'ziyurar
+		// mashinalar uchun. Bu yig'im ko'pincha boj va QQS dan KATTA
+		// bo'ladi (masalan 2 litrli avtomobil uchun 120 BRV = 49 mln),
+		// shuning uchun uni tushirib qoldirish jiddiy xato bo'lardi.
+		if m := duty.UtilFeeMeasure(c.Code); m != "" {
+			fmt.Fprintf(&b, "   ⚠️ bu kodga UTILIZATSIYA YIG'IMI (79) qo'llanadi —\n"+
+				"      hisoblash uchun %s va texnikaning yoshi kerak (ПКМ 347)\n", m)
+		} else if duty.HasUtilFee(c.Code) {
+			b.WriteString("   ⚠️ bu kodga UTILIZATSIYA YIG'IMI (79) qo'llanadi (ПКМ 347)\n")
+		}
 		if e := exempt[c.Code]; len(e) > 0 {
 			fmt.Fprintf(&b, "   ⚠️ bu kodga IMTIYOZ qoidasi bor (%s) — stavka yuqorida\n"+
 				"      ko'rsatilgandek bo'lmasligi mumkin. Shart <HUJJAT_TALABLARI>\n"+

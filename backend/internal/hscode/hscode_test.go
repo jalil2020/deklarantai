@@ -214,3 +214,58 @@ func TestAllProcessWordsFallback(t *testing.T) {
 		t.Error("hamma atama filtrlanib ketdi; filtrsiz qidirish kerak edi")
 	}
 }
+
+// Kundalik so'z nomenklatura atamasiga bog'lanishi kerak.
+//
+// TIF TN rasmiy til bilan yozilgan: unda "noutbuk" ham, "Hyundai" ham
+// yo'q. Noutbuk u yerda "hisoblash mashinalari", avtomobil esa markasi
+// bilan emas, turi bilan ataladi.
+func TestSynonymExpansion(t *testing.T) {
+	s := load(t)
+	cases := []struct{ query, wantPrefix string }{
+		{"noutbuk", "8471"},
+		{"Chevrolet Cobalt import qilsam qancha", "8703"},
+		{"Koreyadan 2019-yilgi Hyundai Sonata, 2.0 litr import qilaman", "8703"},
+		{"kompyuter", "8471"},
+	}
+	for _, c := range cases {
+		got := s.Search(c.query, 5)
+		found := false
+		for _, m := range got {
+			if strings.HasPrefix(m.Code.Code, c.wantPrefix) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			var codes []string
+			for _, m := range got {
+				codes = append(codes, m.Code.Code)
+			}
+			t.Errorf("%q:\n  kutilgan %s…\n  olingan: %v", c.query, c.wantPrefix, codes)
+		}
+	}
+}
+
+// O'lchov birligi tovar nomini bosib ketmasligi kerak.
+//
+// "litr" so'zi yolg'iz o'zi 7309 (rezervuarlar) ni beradi. Avtomobil
+// so'rovida u yagona mos so'z bo'lib qolib, natijani buzardi.
+func TestUnitWordsDoNotDominate(t *testing.T) {
+	s := load(t)
+	// Birlik so'zi bo'lsa ham tovar topilishi kerak.
+	got := s.Search("2.0 litr benzinli avtomobil", 5)
+	found := false
+	for _, m := range got {
+		if strings.HasPrefix(m.Code.Code, "8703") {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("birlik so'zi tovar nomini bosib ketdi")
+	}
+	// Lekin birlik tovarning O'ZI bo'lgan holat buzilmasligi kerak.
+	if got := s.Search("plastik idish", 3); len(got) == 0 {
+		t.Error("oddiy so'rov buzildi")
+	}
+}

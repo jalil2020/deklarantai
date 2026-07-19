@@ -249,6 +249,53 @@ lekin natijada bu ochiq yoziladi. Qonun bo'yicha noma'lum kelib chiqishga
 ×2 qo'llanadi, ammo API chaqiruvchisi shunchaki maydonni to'ldirmagan
 bo'lishi mumkin — jim ravishda bojni ikkilantirish noto'g'ri javob bo'lardi.
 
+## Utilizatsiya yig'imi (79)
+
+Huquqiy asos: **ПКМ № 347** (02.06.2020), 1-ilova. Joriy tahrir —
+ПКМ 52 (31.01.2025), 2025 yil 1 maydan. Jadval `internal/duty/utilfee.go`
+da, ПКМ 55 shkalasi bilan bir uslubda.
+
+Stavka **BRV karrasida** va ikki omilga bog'liq:
+
+1. **O'lchov** — toifaga qarab: dvigatel hajmi (sm³), quvvat (kVt yoki
+   ot kuchi) yoki to'la vazn (tonna)
+2. **Yosh** — ishlab chiqarilganiga 3 yildan ortiqmi
+
+| Toifa | Kod | Misol |
+|---|---|---|
+| Yengil avtomobillar (M1) | 8703 | 2 000 sm³: yangi 120 BRV, eski 210 BRV |
+| Avtobuslar (M2, M3) | 8702 | 120…1 080 BRV |
+| Yuk avtomobillari | 8704 | vazn bo'yicha, 100…1 410 BRV |
+| Traktorlar | 8701 | quvvat bo'yicha, **yangisiga stavka yo'q** |
+| Maxsus, tirkama, o'ziyurar mashinalar | 8705, 8716, 8426–8436 | |
+| Shinalar (2-ilova) | 4011, 4012 | 1 kg uchun BRV ning 0,3% i |
+
+```bash
+curl -X POST http://localhost:8080/api/utilfee/calculate \
+  -d '{"code":"8703 23 194 0","measure":2000,"age_years":5}'
+# -> 210 × BRV = 86 520 000 so'm
+```
+
+⚠️ **Bu yig'im ko'pincha boj va QQS dan katta.** 2 litrli avtomobil uchun
+86 mln so'm — shuning uchun chat kod utilizatsiya ro'yxatida ekanini
+stavka yonida ogohlantiradi va kerakli o'lchovni so'raydi.
+
+⚠️ **Ro'yxatda yo'q kod uchun 0 emas, XATO qaytariladi.** Aksiz bilan bir
+xil mantiq: "yig'im yo'q" deb javob berish, aslida bor bo'lsa, jim va
+xavfli xato bo'lardi.
+
+⚠️ Ko'p toifada **yangi texnikaga stavka belgilanmagan** (qonun jadvalida
+"—"). Bu holda yig'im olinmaydi, lekin natijada nega nol ekani yoziladi.
+
+⚠️ Ishlatilgan shinalar (4012) qatorining foizi manba hujjatda **bo'sh
+qolgan** — noma'lum deb qaytariladi, 0 deb emas.
+
+**Imtiyozlar** (ПКМ 347, 2-band «б») — hozircha kalkulyatorda yo'q, chat
+ularni qonun matnidan aytadi: diplomatik vakolatxonalar; 30 yildan oshgan
+L va M1, 50 yildan oshgan M2/M3/N toifali retro transport; xayriya va
+grant yordami; "vaqtinchalik olib kirish" rejimi; davlat tashqi qarzi
+hisobidan moliyalanadigan loyihalar.
+
 ## Valyuta kursi
 
 Manba: **cbu.uz** ochiq API (`internal/rates`). Kurs bazaga yozilmaydi —
@@ -371,6 +418,7 @@ yo'naltiriladi (Vite proxy).
 | GET   | `/api/health`           | Server holati, AI mavjudligi        |
 | POST  | `/api/hscode/search`    | `{query, use_ai}` → mos kodlar      |
 | POST  | `/api/duty/calculate`   | `{customs_value, import_duty, excise, vat, quantity}` → hisob-kitob |
+| POST  | `/api/utilfee/calculate` | `{code, measure, age_years, weight_kg}` → utilizatsiya yig'imi (79) |
 | POST  | `/api/chat`             | `{messages: [{role, content, images?}]}` → AI javobi (rasm: `images:[{media_type, data(base64)}]`) |
 | POST  | `/api/chat/stream`      | Xuddi shu, lekin javob **oqim** (SSE) bo'lib keladi |
 
@@ -433,9 +481,11 @@ Bular bilib turib qoldirilgan — ishlatishdan oldin hisobga olish kerak.
       faqat foizda oladi. Aroq, sigaret, benzin kabi tovarlarda stavka qat'iy
       summa (so'm/litr, so'm/1000 dona) — bunday tovarni kalkulyator hisoblay
       olmaydi. Chat AI ni bundan ogohlantiradi, lekin API ogohlantirmaydi.
-- [ ] **Utilizatsiya yig'imi (79)** — avtotransport uchun, netto vazn bo'yicha.
-      Umuman qo'llab-quvvatlanmaydi.
+- [x] Utilizatsiya yig'imi (79) qo'shildi — ПКМ 347, 1 va 2-ilova.
 - [ ] **Qo'shimcha boj (21)** — qaysi hollarda qo'llanishi tekshirilmagan.
+- [ ] Utilizatsiya yig'imi IMTIYOZLARI kalkulyatorda yo'q (diplomatik,
+      retro transport, grant, vaqtinchalik olib kirish) — chat ularni
+      qonun matnidan aytadi.
 - [x] Kalkulyator manba ning o'z natijasi bilan solishtirildi va **aynan
       mos keldi** (`TestReferenceReferenceCase`): kod 3001209000, faktura
       1 230 000 + transport 25 000 USD, kurs 12 093,35 → qiymat

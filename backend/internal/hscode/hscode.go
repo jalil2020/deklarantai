@@ -215,6 +215,43 @@ var processWords = map[string]bool{
 	"bojxona": true, "soliq": true, "aksiz": true, "dollarlik": true,
 	"dollar": true, "so'm": true, "som": true, "olib": true, "kirish": true,
 	"hisobla": true, "hisoblab": true, "mening": true,
+
+	// O'LCHOV BIRLIKLARI. Ular tovar tavsifida ham uchraydi
+	// ("100 litrli rezervuar"), shuning uchun qidiruvni buzadi:
+	// "Hyundai Sonata 2.0 litr" so'rovi 7309 (rezervuarlar) ni
+	// birinchi qilgan edi — chunki mos kelgan yagona so'z "litr".
+	"litr": true, "litrli": true, "tonna": true, "tonnalik": true,
+	"kilogramm": true, "yilgi": true, "yillik": true, "metr": true,
+}
+
+// synonyms — kundalik so'zni nomenklatura so'ziga bog'laydi.
+//
+// NEGA KERAK: TIF TN rasmiy til bilan yozilgan va unda "noutbuk" ham,
+// "Hyundai" ham YO'Q. Noutbuk u yerda "hisoblash mashinalari", avtomobil
+// esa markasi bilan emas, turi bilan ataladi. Kalit so'z qidiruvi bu
+// bo'shliqni o'zi to'ldira olmaydi.
+//
+// Bu to'liq yechim EMAS — chinakam yechim embedding qidiruvi. Lekin
+// eng ko'p uchraydigan holatlarni arzon narxda qoplaydi.
+//
+// Markalar manbasi: manba "avto" jadvali (hammasida CODE = 8703).
+var synonyms = map[string]string{
+	// Avtomobil markalari
+	"chevrolet": "avtomobil", "daewoo": "avtomobil", "hyundai": "avtomobil",
+	"kia": "avtomobil", "toyota": "avtomobil", "lexus": "avtomobil",
+	"honda": "avtomobil", "nissan": "avtomobil", "mazda": "avtomobil",
+	"mitsubishi": "avtomobil", "subaru": "avtomobil", "suzuki": "avtomobil",
+	"infiniti": "avtomobil", "daihatsu": "avtomobil", "bmw": "avtomobil",
+	"mercedes": "avtomobil", "audi": "avtomobil", "volkswagen": "avtomobil",
+	"cobalt": "avtomobil", "malibu": "avtomobil", "captiva": "avtomobil",
+	"nexia": "avtomobil", "matiz": "avtomobil", "spark": "avtomobil",
+
+	// Texnika — nomenklaturadagi atama bilan
+	"noutbuk": "hisoblash", "laptop": "hisoblash", "kompyuter": "hisoblash",
+	"planshet": "hisoblash",
+	"smartfon": "telefon", "telefon": "telefon",
+	"televizor": "televizor", "konditsioner": "konditsioner",
+	"muzlatkich": "muzlatgich",
 }
 
 // contentTerms — so'rovdan tovarga oid atamalarni ajratadi.
@@ -232,7 +269,20 @@ func contentTerms(fields []string) []string {
 	}
 	// Hammasi jarayon so'zi bo'lsa (masalan "bojxona to'lovi") — filtrsiz.
 	if len(kept) == 0 {
-		return all
+		kept = all
+	}
+
+	// Nomenklatura atamasini qo'shamiz: "Hyundai" → "avtomobil".
+	// Asl so'z ham qoladi — u boshqa joyda mos kelishi mumkin.
+	seen := make(map[string]bool, len(kept))
+	for _, t := range kept {
+		seen[t] = true
+	}
+	for _, t := range kept {
+		if syn, ok := synonyms[t]; ok && !seen[syn] {
+			seen[syn] = true
+			kept = append(kept, syn)
+		}
 	}
 	return kept
 }
