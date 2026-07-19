@@ -23,6 +23,23 @@ const (
 	topCodes = 8
 	// topLaws — qonun parchalari soni. Ular yirik (~4 KB), shuning uchun kam.
 	topLaws = 3
+
+	// maxContext — retrieval bloklarining umumiy hajm chegarasi (belgi).
+	//
+	// NEGA KERAK: "top-3 parcha" hajmni kafolatlamaydi — parcha uzunligi
+	// har xil. O'lchov shuni ko'rsatdi: "salom" so'zi 57 KB kontekst
+	// yasagan edi (parchalar 94 KB gacha bo'lgani uchun). Parchalash
+	// tuzatilgach 13,5 KB ga tushdi, lekin baribir salomlashish uchun ko'p.
+	//
+	// Byudjet sifat haqida QAROR QABUL QILMAYDI — u faqat eng yomon
+	// holatni chegaralaydi. Ball chegarasi qo'yish xavfliroq bo'lardi:
+	// o'lchovda "salom" 13,2 ball, haqiqiy savol 19,2 ball olgan — farq
+	// juda kichik va chegara foydali natijalarni ham kesib yuborardi.
+	maxContext = 24_000
+
+	// shortQuestion — bundan qisqa va bazadan hech narsa topilmagan savol
+	// arzon modelga yo'naltiriladi (salomlashish, "nima qila olasan").
+	shortQuestion = 120
 )
 
 const basePrompt = `Sen "Deklarant AI" — O'zbekiston Respublikasi bojxona ishlari bo'yicha yordamchisan.
@@ -173,7 +190,8 @@ QO'LINGDAGI BAZA:
 
 // Reply — suhbat tarixiga javob qaytaradi.
 func (s *Service) Reply(ctx context.Context, history []llm.Message) (string, error) {
-	return s.client.Complete(ctx, s.systemPrompt(), s.withRetrieval(history))
+	msgs, _ := s.withRetrieval(history)
+	return s.client.Complete(ctx, s.systemPrompt(), msgs)
 }
 
 // ReplyStream — javobni bo'lak-bo'lak qaytaradi (SSE uchun).
@@ -181,19 +199,24 @@ func (s *Service) Reply(ctx context.Context, history []llm.Message) (string, err
 // Retrieval Reply bilan bir xil — farqi faqat javobning yetkazilishida,
 // shuning uchun ikkala yo'l ham bir xil kontekst va ko'rsatma bilan ishlaydi.
 func (s *Service) ReplyStream(ctx context.Context, history []llm.Message, onChunk llm.StreamFunc) error {
-	return s.client.Stream(ctx, s.systemPrompt(), s.withRetrieval(history), onChunk)
+	msgs, retrieved := s.withRetrieval(history)
+	var text string
+	if len(history) > 0 {
+		text = history[len(history)-1].Content
+	}
+	return s.client.Stream(ctx, modelFor(text, retrieved), s.systemPrompt(), msgs, onChunk)
 }
 
 // withRetrieval — oxirgi foydalanuvchi savoliga mos TIF TN kodlari va qonun
 // parchalarini topib, uning matniga qo'shib qo'yadi.
 // Asl tarix o'zgartirilmaydi (nusxa qaytariladi).
-func (s *Service) withRetrieval(history []llm.Message) []llm.Message {
+func (s *Service) withRetrieval(history []llm.Message) ([]llm.Message, bool) {
 	if len(history) == 0 {
-		return history
+		return history, false
 	}
 	last := history[len(history)-1]
 	if last.Role != "user" || strings.TrimSpace(last.Content) == "" {
-		return history // rasm-only xabar yoki bo'sh — qidiradigan narsa yo'q
+		return history, false // rasm-only xabar yoki bo'sh — qidiradigan narsa yo'q
 	}
 
 	var blocks []string
@@ -223,37 +246,82 @@ func (s *Service) withRetrieval(history []llm.Message) []llm.Message {
 	}
 	if s.laws != nil {
 		if m := s.laws.Search(last.Content, topLaws); len(m) > 0 {
-			blocks = append(blocks, formatLaws(m))
+			// Qonun parchalari eng yirik qism — qolgan byudjet ularga
+			// beriladi. Kod va hujjat bloklari aniqroq bo'lgani uchun
+			// ular birinchi navbatda joy oladi.
+			used := 0
+			for _, b := range blocks {
+				used += len(b)
+			}
+			if b := formatLaws(m, maxContext-used); b != "" {
+				blocks = append(blocks, b)
+			}
 		}
 	}
 	if len(blocks) == 0 {
-		return history
+		return history, false
 	}
 
 	out := make([]llm.Message, len(history))
 	copy(out, history)
 	out[len(out)-1].Content = last.Content + "\n\n" + strings.Join(blocks, "\n\n")
-	return out
+	return out, true
+}
+
+// modelFor — savolga qaysi model mos.
+//
+// Arzon model FAQAT bazadan hech narsa topilmagan QISQA savolga beriladi:
+// salomlashish, "nima qila olasan", "rahmat". Bunday savolda kontekst ham
+// yo'q, ya'ni javob modelning umumiy bilimiga tayanadi va Haiku bemalol
+// uddalaydi.
+//
+// DIQQAT: bazadan biror narsa topilgan bo'lsa — DOIM asosiy model. Stavka,
+// modda raqami va hisob-kitob — arzonlashtiriladigan joy emas.
+func modelFor(text string, retrieved bool) llm.Model {
+	if retrieved || len([]rune(text)) > shortQuestion {
+		return llm.Full
+	}
+	return llm.Fast
 }
 
 // formatLaws — topilgan qonun parchalarini kontekst bloki sifatida shakllantiradi.
-func formatLaws(matches []laws.Match) string {
+// budget — blokka ajratilgan hajm (belgi). Parchalar shu hajm to'lgunicha
+// qo'shiladi; sig'maganlari tushib qoladi. Qidiruv ularni mos tartibda
+// bergani uchun avval eng mosi joy oladi.
+func formatLaws(matches []laws.Match, budget int) string {
 	var b strings.Builder
 	b.WriteString("<QONUNCHILIKDAN>\n")
+
+	added, skipped := 0, 0
 	for _, m := range matches {
 		c := m.Chunk
-		fmt.Fprintf(&b, "\n— Manba: %s", c.Name)
+		var one strings.Builder
+		fmt.Fprintf(&one, "\n— Manba: %s", c.Name)
 		if c.Date != "" {
-			fmt.Fprintf(&b, " (%s)", c.Date)
+			fmt.Fprintf(&one, " (%s)", c.Date)
 		}
 		if c.Since != "" {
-			fmt.Fprintf(&b, ", %s dan amalda", c.Since)
+			fmt.Fprintf(&one, ", %s dan amalda", c.Since)
 		}
 		// lex.uz havolasi — foydalanuvchi rasmiy matnni ochib tekshira olsin.
 		if c.Lex != "" {
-			fmt.Fprintf(&b, "\n  Rasmiy manba: %s", c.Lex)
+			fmt.Fprintf(&one, "\n  Rasmiy manba: %s", c.Lex)
 		}
-		fmt.Fprintf(&b, "\n  %s\n%s\n", c.Title, c.Text)
+		fmt.Fprintf(&one, "\n  %s\n%s\n", c.Title, c.Text)
+
+		// Birinchi parcha byudjetdan oshsa ham qo'shamiz: bo'sh blok
+		// qaytargandan ko'ra bitta parcha berilgani yaxshiroq.
+		if added > 0 && b.Len()+one.Len() > budget {
+			skipped++
+			continue
+		}
+		b.WriteString(one.String())
+		added++
+	}
+	// Tushib qolgani bo'lsa — buni yashirmaymiz, model "hammasi shu" deb
+	// o'ylamasligi kerak.
+	if skipped > 0 {
+		fmt.Fprintf(&b, "\n(yana %d ta mos parcha bor, hajm chegarasi tufayli kiritilmadi)\n", skipped)
 	}
 	b.WriteString("</QONUNCHILIKDAN>")
 	return b.String()

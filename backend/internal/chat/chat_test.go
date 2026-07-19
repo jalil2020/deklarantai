@@ -40,7 +40,10 @@ func userMsg(text string) []llm.Message {
 
 // Oxirgi savolga baza bloklari qo'shilishi kerak.
 func TestWithRetrievalAppendsBlocks(t *testing.T) {
-	got := newService(t).withRetrieval(userMsg("traktor import qilsam qancha boj"))
+	got, retrieved := newService(t).withRetrieval(userMsg("traktor import qilsam qancha boj"))
+	if !retrieved {
+		t.Error("baza konteksti topilmadi deb belgilandi")
+	}
 	if len(got) != 1 {
 		t.Fatalf("xabarlar soni %d; 1 kutilgan", len(got))
 	}
@@ -87,7 +90,7 @@ func TestWithRetrievalSkipsWhenNothingToSearch(t *testing.T) {
 		"bo'sh tarix":        {},
 	}
 	for name, h := range cases {
-		got := s.withRetrieval(h)
+		got, _ := s.withRetrieval(h)
 		if len(got) != len(h) {
 			t.Errorf("%s: xabarlar soni o'zgardi (%d -> %d)", name, len(h), len(got))
 			continue
@@ -103,7 +106,10 @@ func TestWithRetrievalSkipsWhenNothingToSearch(t *testing.T) {
 // Hech narsa topilmasa, tarix o'zgarmasdan qaytishi kerak.
 func TestWithRetrievalNoMatches(t *testing.T) {
 	h := userMsg("zzzqwertyuiop")
-	got := newService(t).withRetrieval(h)
+	got, retrieved := newService(t).withRetrieval(h)
+	if retrieved {
+		t.Error("moslik yo'q, lekin topildi deb belgilandi")
+	}
 	if got[0].Content != h[0].Content {
 		t.Errorf("moslik yo'q, lekin kontekst qo'shilgan: %q", got[0].Content)
 	}
@@ -186,7 +192,7 @@ func TestFormatLawsShowsLexLink(t *testing.T) {
 	if len(m) == 0 {
 		t.Fatal("qonun parchasi topilmadi")
 	}
-	got := formatLaws(m)
+	got := formatLaws(m, maxContext)
 
 	if !strings.Contains(got, "<QONUNCHILIKDAN>") {
 		t.Error("blok sarlavhasi yo'q")
@@ -229,6 +235,7 @@ func TestFormatDocsEmpty(t *testing.T) {
 // To'liq yo'l: soxta API serveri bilan.
 func TestReplySendsPromptAndReturnsText(t *testing.T) {
 	var gotSystem string
+	var gotCache bool
 	var gotMessages []struct {
 		Role    string `json:"role"`
 		Content any    `json:"content"`
@@ -239,7 +246,12 @@ func TestReplySendsPromptAndReturnsText(t *testing.T) {
 			t.Error("x-api-key sarlavhasi yuborilmadi")
 		}
 		var req struct {
-			System   string `json:"system"`
+			System []struct {
+				Text         string `json:"text"`
+				CacheControl *struct {
+					Type string `json:"type"`
+				} `json:"cache_control"`
+			} `json:"system"`
 			Messages []struct {
 				Role    string `json:"role"`
 				Content any    `json:"content"`
@@ -248,7 +260,10 @@ func TestReplySendsPromptAndReturnsText(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			t.Errorf("so'rovni o'qib bo'lmadi: %v", err)
 		}
-		gotSystem = req.System
+		if len(req.System) > 0 {
+			gotSystem = req.System[0].Text
+			gotCache = req.System[0].CacheControl != nil
+		}
 		gotMessages = req.Messages
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"content":[{"type":"text","text":"javob matni"}]}`))
@@ -268,6 +283,11 @@ func TestReplySendsPromptAndReturnsText(t *testing.T) {
 	}
 	if !strings.Contains(gotSystem, "Deklarant AI") {
 		t.Error("tizim ko'rsatmasi yuborilmadi")
+	}
+	// Ko'rsatma ~6 000 belgi va har so'rovda BIR XIL — keshsiz u har safar
+	// qaytadan to'lanardi. Kesh o'qish narxi asl narxning ~10%i.
+	if !gotCache {
+		t.Error("tizim ko'rsatmasiga cache_control qo'yilmadi — kesh ishlamaydi")
 	}
 	// Retrieval bloklari aynan so'rov ichida ketishi kerak.
 	if len(gotMessages) != 1 {
@@ -306,3 +326,60 @@ func TestReplyWithoutAPIKey(t *testing.T) {
 	}
 }
 
+
+// Arzon model FAQAT bazadan hech narsa topilmagan qisqa savolga.
+//
+// Xavf aniq: stavka yoki modda raqami arzonlashtiriladigan joy emas.
+// Shuning uchun bazadan biror narsa topilgan bo'lsa — doim asosiy model.
+func TestModelRouting(t *testing.T) {
+	cases := []struct {
+		name      string
+		text      string
+		retrieved bool
+		want      llm.Model
+	}{
+		{"salomlashish", "salom", false, llm.Fast},
+		{"minnatdorchilik", "rahmat", false, llm.Fast},
+		{"baza topildi", "salom", true, llm.Full},
+		{"uzun savol", strings.Repeat("a", shortQuestion+1), false, llm.Full},
+		{"haqiqiy savol", "traktor import qilsam qancha boj", true, llm.Full},
+	}
+	for _, c := range cases {
+		if got := modelFor(c.text, c.retrieved); got != c.want {
+			t.Errorf("%s: model = %v; %v kutilgan", c.name, got, c.want)
+		}
+	}
+}
+
+// Kontekst byudjeti eng yomon holatni chegaralashi kerak.
+//
+// O'lchov: "salom" so'zi bir vaqtlar 57 KB kontekst yasagan (qonun
+// parchalari 94 KB gacha bo'lgani uchun). Parchalash tuzatilgach 13,5 KB
+// ga tushdi, byudjet esa yuqori chegarani kafolatlaydi.
+func TestContextBudget(t *testing.T) {
+	s := newService(t)
+	for _, q := range []string{"salom", "bojxona", "traktor import qilsam qancha boj"} {
+		msgs, _ := s.withRetrieval(userMsg(q))
+		got := len(msgs[len(msgs)-1].Content)
+		// Byudjet qonun blokiga qo'llanadi; kod va hujjat bloklari
+		// ustiga qo'shiladi, shuning uchun biroz zaxira qoldiramiz.
+		if got > maxContext+16_000 {
+			t.Errorf("%q: kontekst %d belgi; byudjet %d", q, got, maxContext)
+		}
+	}
+}
+
+// Byudjetga sig'magan parchalar borligi YASHIRILMASLIGI kerak —
+// model "hammasi shu" deb o'ylamasligi kerak.
+func TestBudgetTruncationIsVisible(t *testing.T) {
+	s := newService(t)
+	m := s.laws.Search("bojxona", topLaws)
+	if len(m) < 2 {
+		t.Skip("kamida 2 ta parcha kerak")
+	}
+	// Faqat bittasi sig'adigan byudjet.
+	got := formatLaws(m, 100)
+	if !strings.Contains(got, "hajm chegarasi tufayli kiritilmadi") {
+		t.Error("tushib qolgan parchalar haqida ogohlantirish yo'q")
+	}
+}

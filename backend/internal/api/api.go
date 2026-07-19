@@ -18,15 +18,22 @@ import (
 
 // Server — barcha bog'liqliklarni ushlab turadi.
 type Server struct {
-	codes *hscode.Store
-	laws  *laws.Store // nil bo'lishi mumkin
-	chat  *chat.Service
-	llm   *llm.Client
+	codes   *hscode.Store
+	laws    *laws.Store // nil bo'lishi mumkin
+	chat    *chat.Service
+	llm     *llm.Client
+	limiter *limiter
 }
 
 // New — server yaratadi.
 func New(codes *hscode.Store, lawStore *laws.Store, chatSvc *chat.Service, llmClient *llm.Client) *Server {
-	return &Server{codes: codes, laws: lawStore, chat: chatSvc, llm: llmClient}
+	return &Server{
+		codes:   codes,
+		laws:    lawStore,
+		chat:    chatSvc,
+		llm:     llmClient,
+		limiter: newLimiter(),
+	}
 }
 
 // Routes — barcha marshrutlarni ro'yxatdan o'tkazadi.
@@ -37,7 +44,10 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /api/duty/calculate", s.handleDutyCalc)
 	mux.HandleFunc("POST /api/chat", s.handleChat)
 	mux.HandleFunc("POST /api/chat/stream", s.handleChatStream)
-	return withCORS(mux)
+	// Tartib muhim: CORS eng tashqarida bo'lishi kerak, aks holda
+	// cheklovga uchragan javobda CORS sarlavhalari bo'lmaydi va brauzer
+	// xato matnini o'qiy olmay, foydalanuvchi sababni bilmay qoladi.
+	return withCORS(s.withLimits(mux))
 }
 
 // ---- Health ----

@@ -174,7 +174,7 @@ func TestStreamCollectsTextDeltas(t *testing.T) {
 	t.Setenv("ANTHROPIC_API_URL", srv.URL)
 
 	var got []string
-	err := New().Stream(context.Background(), "s", []Message{{Role: "user", Content: "x"}},
+	err := New().Stream(context.Background(), Full, "s", []Message{{Role: "user", Content: "x"}},
 		func(chunk string) error { got = append(got, chunk); return nil })
 	if err != nil {
 		t.Fatal(err)
@@ -199,7 +199,7 @@ func TestStreamMidStreamError(t *testing.T) {
 	t.Setenv("ANTHROPIC_API_KEY", "k")
 	t.Setenv("ANTHROPIC_API_URL", srv.URL)
 
-	err := New().Stream(context.Background(), "s", []Message{{Role: "user", Content: "x"}},
+	err := New().Stream(context.Background(), Full, "s", []Message{{Role: "user", Content: "x"}},
 		func(string) error { return nil })
 	if err == nil || !strings.Contains(err.Error(), "ortiqcha yuklama") {
 		t.Errorf("oqim ichidagi xato yo'qoldi: %v", err)
@@ -217,7 +217,7 @@ func TestStreamPreStreamError(t *testing.T) {
 	t.Setenv("ANTHROPIC_API_KEY", "k")
 	t.Setenv("ANTHROPIC_API_URL", srv.URL)
 
-	err := New().Stream(context.Background(), "s", []Message{{Role: "user", Content: "x"}},
+	err := New().Stream(context.Background(), Full, "s", []Message{{Role: "user", Content: "x"}},
 		func(string) error { return nil })
 	if err == nil || !strings.Contains(err.Error(), "kalit yaroqsiz") {
 		t.Errorf("xato matni yo'qoldi: %v", err)
@@ -236,7 +236,7 @@ func TestStreamStopsOnCallbackError(t *testing.T) {
 	t.Setenv("ANTHROPIC_API_URL", srv.URL)
 
 	n := 0
-	err := New().Stream(context.Background(), "s", []Message{{Role: "user", Content: "x"}},
+	err := New().Stream(context.Background(), Full, "s", []Message{{Role: "user", Content: "x"}},
 		func(string) error { n++; return errors.New("mijoz ketdi") })
 	if err == nil {
 		t.Fatal("xato kutilgan edi")
@@ -254,7 +254,7 @@ func TestStreamEmptyResponse(t *testing.T) {
 	t.Setenv("ANTHROPIC_API_KEY", "k")
 	t.Setenv("ANTHROPIC_API_URL", srv.URL)
 
-	if err := New().Stream(context.Background(), "s", []Message{{Role: "user", Content: "x"}},
+	if err := New().Stream(context.Background(), Full, "s", []Message{{Role: "user", Content: "x"}},
 		func(string) error { return nil }); err == nil {
 		t.Error("bo'sh javobda xato kutilgan edi")
 	}
@@ -262,7 +262,85 @@ func TestStreamEmptyResponse(t *testing.T) {
 
 func TestStreamWithoutKey(t *testing.T) {
 	t.Setenv("ANTHROPIC_API_KEY", "")
-	if err := New().Stream(context.Background(), "s", nil, func(string) error { return nil }); !errors.Is(err, ErrNoAPIKey) {
+	if err := New().Stream(context.Background(), Full, "s", nil, func(string) error { return nil }); !errors.Is(err, ErrNoAPIKey) {
 		t.Errorf("ErrNoAPIKey kutilgan: %v", err)
+	}
+}
+
+// Arzon model faqat Fast so'ralganda ishlatilishi kerak.
+func TestModelRouting(t *testing.T) {
+	t.Setenv("ANTHROPIC_API_KEY", "k")
+	t.Setenv("ANTHROPIC_MODEL", "asosiy")
+	t.Setenv("ANTHROPIC_FAST_MODEL", "arzon")
+	c := New()
+
+	if got := c.modelFor(Full); got != "asosiy" {
+		t.Errorf("Full -> %q; \"asosiy\" kutilgan", got)
+	}
+	if got := c.modelFor(Fast); got != "arzon" {
+		t.Errorf("Fast -> %q; \"arzon\" kutilgan", got)
+	}
+}
+
+// Tizim ko'rsatmasi keshlanishi; qisqa matn esa keshlanmasligi kerak.
+func TestSystemPromptCaching(t *testing.T) {
+	t.Setenv("ANTHROPIC_API_KEY", "k")
+	c := New()
+
+	type sysBlk struct {
+		Text         string `json:"text"`
+		CacheControl *struct {
+			Type string `json:"type"`
+		} `json:"cache_control"`
+	}
+	parse := func(body []byte) []sysBlk {
+		var req struct {
+			System []sysBlk `json:"system"`
+		}
+		if err := json.Unmarshal(body, &req); err != nil {
+			t.Fatal(err)
+		}
+		return req.System
+	}
+
+	long := strings.Repeat("a", minCacheable+1)
+	body, _ := c.buildRequest(Full, long, nil, false)
+	sys := parse(body)
+	if len(sys) != 1 || sys[0].CacheControl == nil {
+		t.Error("uzun ko'rsatma keshlanmadi")
+	} else if sys[0].CacheControl.Type != "ephemeral" {
+		t.Errorf("cache_control turi = %q", sys[0].CacheControl.Type)
+	}
+
+	// Qisqa matnni keshlashning ma'nosi yo'q — API ham rad etishi mumkin.
+	body, _ = c.buildRequest(Full, "qisqa", nil, false)
+	if sys := parse(body); len(sys) == 1 && sys[0].CacheControl != nil {
+		t.Error("qisqa ko'rsatmaga ham kesh qo'yildi")
+	}
+}
+
+// Javob uzunligi chegarasi sozlanishi.
+func TestMaxTokensFromEnv(t *testing.T) {
+	t.Setenv("ANTHROPIC_API_KEY", "k")
+	t.Setenv("ANTHROPIC_MAX_TOKENS", "512")
+	body, _ := New().buildRequest(Full, "s", nil, false)
+
+	var req struct {
+		MaxTokens int `json:"max_tokens"`
+	}
+	if err := json.Unmarshal(body, &req); err != nil {
+		t.Fatal(err)
+	}
+	if req.MaxTokens != 512 {
+		t.Errorf("max_tokens = %d; 512 kutilgan", req.MaxTokens)
+	}
+
+	// Noto'g'ri qiymat sukutga qaytishi kerak, 0 ga emas — 0 bo'lsa API
+	// so'rovni rad etardi.
+	t.Setenv("ANTHROPIC_MAX_TOKENS", "salom")
+	body, _ = New().buildRequest(Full, "s", nil, false)
+	_ = json.Unmarshal(body, &req)
+	if req.MaxTokens != defaultMaxTokens {
+		t.Errorf("noto'g'ri qiymatda max_tokens = %d; %d kutilgan", req.MaxTokens, defaultMaxTokens)
 	}
 }

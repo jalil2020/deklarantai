@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -20,6 +21,9 @@ const (
 	defaultAPIURL = "https://api.anthropic.com/v1/messages"
 	apiVersion    = "2023-06-01"
 	defaultModel  = "claude-opus-4-8"
+	// Arzon model — faqat bazaga aloqasi yo'q qisqa savollar uchun.
+	defaultFastModel = "claude-haiku-4-5-20251001"
+	defaultMaxTokens = 2048
 )
 
 // ErrNoAPIKey — API kaliti sozlanmagan.
@@ -27,10 +31,30 @@ var ErrNoAPIKey = errors.New("ANTHROPIC_API_KEY sozlanmagan")
 
 // Client — Claude API klienti.
 type Client struct {
-	apiKey string
-	model  string
-	url    string
-	http   *http.Client
+	apiKey    string
+	model     string
+	fastModel string // qisqa, bazaga aloqasi yo'q savollar uchun
+	url       string
+	maxTokens int
+	http      *http.Client
+}
+
+// Model — javob uchun qaysi modelni ishlatish.
+type Model int
+
+const (
+	// Full — asosiy model. Hisob-kitob, kod, qonun — hamma jiddiy savol.
+	Full Model = iota
+	// Fast — arzon model. FAQAT bazadan hech narsa topilmagan qisqa
+	// savollar uchun (salomlashish, "nima qila olasan").
+	Fast
+)
+
+func (c *Client) modelFor(m Model) string {
+	if m == Fast && c.fastModel != "" {
+		return c.fastModel
+	}
+	return c.model
 }
 
 // New — muhit o'zgaruvchilaridan klient yaratadi.
@@ -48,12 +72,26 @@ func New() *Client {
 	if url == "" {
 		url = defaultAPIURL
 	}
-	return &Client{
-		apiKey: os.Getenv("ANTHROPIC_API_KEY"),
-		model:  model,
-		url:    url,
-		http:   &http.Client{Timeout: 120 * time.Second},
+	fast := os.Getenv("ANTHROPIC_FAST_MODEL")
+	if fast == "" {
+		fast = defaultFastModel
 	}
+	return &Client{
+		apiKey:    os.Getenv("ANTHROPIC_API_KEY"),
+		model:     model,
+		fastModel: fast,
+		url:       url,
+		maxTokens: envInt("ANTHROPIC_MAX_TOKENS", defaultMaxTokens),
+		http:      &http.Client{Timeout: 120 * time.Second},
+	}
+}
+
+// envInt — muhit o'zgaruvchisidan musbat butun son; noto'g'ri bo'lsa sukut.
+func envInt(name string, def int) int {
+	if v, err := strconv.Atoi(os.Getenv(name)); err == nil && v > 0 {
+		return v
+	}
+	return def
 }
 
 // Available — API kaliti mavjudligini bildiradi.
@@ -84,24 +122,52 @@ type Message struct {
 type apiRequest struct {
 	Model     string       `json:"model"`
 	MaxTokens int          `json:"max_tokens"`
-	System    string       `json:"system,omitempty"`
+	System    []systemMsg  `json:"system,omitempty"`
 	Messages  []apiMessage `json:"messages"`
 	Stream    bool         `json:"stream,omitempty"`
 }
 
-const maxTokens = 2048
+// systemMsg — tizim ko'rsatmasi bloki. Massiv ko'rinishi kesh uchun zarur:
+// oddiy matn bo'lsa, cache_control ni biriktirib bo'lmaydi.
+type systemMsg struct {
+	Type         string        `json:"type"` // "text"
+	Text         string        `json:"text"`
+	CacheControl *cacheControl `json:"cache_control,omitempty"`
+}
+
+type cacheControl struct {
+	Type string `json:"type"` // "ephemeral"
+}
+
+// Tizim ko'rsatmasi ~6 000 belgi va HAR SO'ROVDA bir xil. Kesh bo'lmasa,
+// u har safar qaytadan to'lanadi. Kesh o'qish narxi asl narxning ~10%i.
+//
+// Kesh ATAYLAB shu yerda: ko'rsatma barqaror, retrieval bloklari esa
+// oxirgi FOYDALANUVCHI xabariga qo'shiladi — ular o'zgaruvchan bo'lgani
+// uchun keshga tushmaydi va keshni buzmaydi ham.
+const minCacheable = 2048 // belgi; bundan qisqa matnni keshlashning ma'nosi yo'q
 
 // buildRequest — so'rov tanasini yig'adi. Complete va Stream uchun umumiy,
 // shunda ikkalasi bir xil model, limit va kontekst bilan ishlaydi.
-func (c *Client) buildRequest(system string, history []Message, stream bool) ([]byte, error) {
+func (c *Client) buildRequest(model Model, system string, history []Message, stream bool) ([]byte, error) {
 	msgs := make([]apiMessage, 0, len(history))
 	for _, m := range history {
 		msgs = append(msgs, apiMessage{Role: m.Role, Content: buildContent(m)})
 	}
+
+	var sys []systemMsg
+	if system != "" {
+		blk := systemMsg{Type: "text", Text: system}
+		if len(system) >= minCacheable {
+			blk.CacheControl = &cacheControl{Type: "ephemeral"}
+		}
+		sys = []systemMsg{blk}
+	}
+
 	return json.Marshal(apiRequest{
-		Model:     c.model,
-		MaxTokens: maxTokens,
-		System:    system,
+		Model:     c.modelFor(model),
+		MaxTokens: c.maxTokens,
+		System:    sys,
 		Messages:  msgs,
 		Stream:    stream,
 	})
@@ -146,6 +212,7 @@ type apiResponse struct {
 		Type string `json:"type"`
 		Text string `json:"text"`
 	} `json:"content"`
+	Usage apiUsage `json:"usage"`
 	Error *struct {
 		Message string `json:"message"`
 	} `json:"error"`
@@ -180,7 +247,7 @@ func (c *Client) Complete(ctx context.Context, system string, history []Message)
 		return "", ErrNoAPIKey
 	}
 
-	body, err := c.buildRequest(system, history, false)
+	body, err := c.buildRequest(Full, system, history, false)
 	if err != nil {
 		return "", err
 	}
@@ -207,6 +274,8 @@ func (c *Client) Complete(ctx context.Context, system string, history []Message)
 		return "", fmt.Errorf("API status %d: %s", resp.StatusCode, string(raw))
 	}
 
+	c.reportUsage(Full, out.Usage)
+
 	var text string
 	for _, blk := range out.Content {
 		if blk.Type == "text" {
@@ -228,7 +297,11 @@ type StreamFunc func(chunk string) error
 // content_block_start, ping, message_stop...). Bizga faqat matn bo'laklari
 // kerak: type="content_block_delta", delta.type="text_delta".
 type streamEvent struct {
-	Type  string `json:"type"`
+	Type    string   `json:"type"`
+	Usage   apiUsage `json:"usage"`
+	Message *struct {
+		Usage apiUsage `json:"usage"`
+	} `json:"message"`
 	Delta struct {
 		Type string `json:"type"`
 		Text string `json:"text"`
@@ -247,11 +320,11 @@ type streamEvent struct {
 // status va JSON xato tanasi) va oqim ICHIDA (event: error). Ikkalasi ham
 // qayta ishlanadi — aks holda foydalanuvchi yarim javob olib, nima
 // bo'lganini bilmay qolardi.
-func (c *Client) Stream(ctx context.Context, system string, history []Message, onChunk StreamFunc) error {
+func (c *Client) Stream(ctx context.Context, model Model, system string, history []Message, onChunk StreamFunc) error {
 	if !c.Available() {
 		return ErrNoAPIKey
 	}
-	body, err := c.buildRequest(system, history, true)
+	body, err := c.buildRequest(model, system, history, true)
 	if err != nil {
 		return err
 	}
@@ -282,6 +355,9 @@ func (c *Client) Stream(ctx context.Context, system string, history []Message, o
 	// jim uzilib qolmasligi uchun buferni kengaytiramiz.
 	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 
+	// Oqimda sarf ikki joyda keladi: message_start da kirish tokenlari
+	// (kesh ma'lumoti ham shu yerda), message_delta da chiqish tokenlari.
+	var usage apiUsage
 	var got bool
 	for sc.Scan() {
 		line := sc.Text()
@@ -301,6 +377,14 @@ func (c *Client) Stream(ctx context.Context, system string, history []Message, o
 		if ev.Error != nil {
 			return fmt.Errorf("API xatosi: %s", ev.Error.Message)
 		}
+		if ev.Message != nil && ev.Message.Usage.InputTokens > 0 {
+			usage.InputTokens = ev.Message.Usage.InputTokens
+			usage.CacheCreationInputTokens = ev.Message.Usage.CacheCreationInputTokens
+			usage.CacheReadInputTokens = ev.Message.Usage.CacheReadInputTokens
+		}
+		if ev.Usage.OutputTokens > 0 {
+			usage.OutputTokens = ev.Usage.OutputTokens
+		}
 		if ev.Type != "content_block_delta" || ev.Delta.Type != "text_delta" || ev.Delta.Text == "" {
 			continue
 		}
@@ -309,6 +393,8 @@ func (c *Client) Stream(ctx context.Context, system string, history []Message, o
 			return err
 		}
 	}
+	c.reportUsage(model, usage)
+
 	if err := sc.Err(); err != nil {
 		return fmt.Errorf("oqim uzildi: %w", err)
 	}
@@ -317,4 +403,44 @@ func (c *Client) Stream(ctx context.Context, system string, history []Message, o
 		return errors.New("API bo'sh javob qaytardi")
 	}
 	return nil
+}
+
+// ---------------------------------------------------------------- hisob
+
+// Usage — bitta so'rovning token sarfi.
+//
+// NEGA KERAK: xarajatni ko'rmasdan boshqarib bo'lmaydi. Ayniqsa
+// CacheRead — kesh ishlayotganini shu ko'rsatadi. Kesh ishlamasa,
+// CacheRead doim 0 bo'ladi va tizim ko'rsatmasi har safar to'liq
+// to'lanadi.
+type Usage struct {
+	Model        string
+	InputTokens  int
+	OutputTokens int
+	CacheWrite   int // keshga yozilgan (birinchi so'rovda)
+	CacheRead    int // keshdan o'qilgan (arzon)
+}
+
+// OnUsage — har so'rovdan keyin chaqiriladi (nil bo'lishi mumkin).
+// main.go da jurnalga yozish uchun o'rnatiladi.
+var OnUsage func(Usage)
+
+type apiUsage struct {
+	InputTokens              int `json:"input_tokens"`
+	OutputTokens             int `json:"output_tokens"`
+	CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
+	CacheReadInputTokens     int `json:"cache_read_input_tokens"`
+}
+
+func (c *Client) reportUsage(model Model, u apiUsage) {
+	if OnUsage == nil {
+		return
+	}
+	OnUsage(Usage{
+		Model:        c.modelFor(model),
+		InputTokens:  u.InputTokens,
+		OutputTokens: u.OutputTokens,
+		CacheWrite:   u.CacheCreationInputTokens,
+		CacheRead:    u.CacheReadInputTokens,
+	})
 }

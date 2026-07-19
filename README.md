@@ -201,6 +201,64 @@ va kalkulyator ishlaydi, faqat chat o'chiq bo'ladi.
 | `PORT` | yo'q | Sukut bo'yicha `8080` |
 | `HSCODE_DATA`, `LAWS_DATA`, `DOCS_DATA` | yo'q | Ma'lumot fayllari yo'li |
 
+## Xarajat nazorati
+
+Har bir chat so'rovi pul turadi, shuning uchun to'rt qatlam qo'yilgan.
+Sozlash — muhit o'zgaruvchilari bilan.
+
+**1. Prompt keshi.** Tizim ko'rsatmasi ~6 000 belgi va har so'rovda bir xil.
+Unga `cache_control: ephemeral` biriktiriladi va keshdan o'qish narxi asl
+narxning ~10%i. O'lchangan: har so'rovda **3 543 token keshdan** o'qiladi.
+
+Retrieval bloklari ataylab **oxirgi foydalanuvchi xabariga** qo'shiladi —
+ular o'zgaruvchan, shuning uchun keshga tushmaydi va keshni buzmaydi ham.
+
+**2. Kontekst byudjeti** (`maxContext = 24 000` belgi). O'lchov shuni
+ko'rsatdi: "salom" so'zi **57 KB** kontekst yasagan edi — sabab, qonun
+parchalari 94 KB gacha bo'lgan (`splitLong` uzun abzatsni bo'lmasdi).
+Parchalash tuzatilgach 13,5 KB ga tushdi, byudjet esa yuqori chegarani
+kafolatlaydi. Sig'magan parchalar borligi kontekstda **ochiq yoziladi**.
+
+> Ball chegarasi qo'yilmadi: o'lchovda "salom" 13,2 ball, haqiqiy savol
+> 19,2 ball olgan — farq juda kichik va chegara foydali natijalarni ham
+> kesib yuborardi. Byudjet sifat haqida qaror qabul qilmaydi.
+
+**3. Arzon model.** Bazadan hech narsa topilmagan va 120 belgidan qisqa
+savol (salomlashish, "nima qila olasan") Haiku ga yo'naltiriladi.
+O'lchangan: "rahmat" → Haiku, 2 879 token, 8 s (Opus da 21–28 s).
+
+> ⚠️ Bazadan biror narsa topilgan bo'lsa — **doim** asosiy model. Stavka,
+> modda raqami va hisob-kitob arzonlashtiriladigan joy emas.
+
+**4. So'rov cheklovlari** (`internal/api/limit.go`). IP bo'yicha daqiqasiga
+va kuniga; hajm chegarasi hamma POST so'rovga. Faqat `/api/chat*` yo'llari
+cheklanadi — health va kalkulyator arzon.
+
+| O'zgaruvchi | Sukut | Tavsif |
+|---|---|---|
+| `RATE_PER_MIN` | 10 | Bitta IP dan daqiqasiga (0 = o'chiq) |
+| `DAILY_QUOTA` | 100 | Bitta IP dan kuniga (0 = o'chiq) |
+| `MAX_BODY_BYTES` | 8 MB | So'rov hajmi (rasm base64 bilan keladi) |
+| `TRUST_PROXY` | — | `1` bo'lsa `X-Forwarded-For` ga ishoniladi |
+| `ANTHROPIC_MAX_TOKENS` | 2048 | Javob uzunligi chegarasi |
+| `ANTHROPIC_FAST_MODEL` | haiku-4.5 | Arzon model |
+
+⚠️ Bu autentifikatsiya **o'rnini bosmaydi** — u kelgunicha eng kam himoya.
+Hisoblagich xotirada, ya'ni bitta server nusxasi uchun; bir nechta server
+ishlaganda umumiy hisoblagich (Redis) kerak bo'ladi.
+
+⚠️ `TRUST_PROXY` faqat ishonchli proksi orqasida yoqilsin — aks holda
+mijoz `X-Forwarded-For` ni qalbakilashtirib chegarani aylanib o'tadi.
+
+**Sarfni ko'rish.** Har so'rovdan keyin jurnalga yoziladi:
+
+```
+sarf: model=claude-opus-4-8 kirish=7524 chiqish=1141 kesh(yozildi=0 o'qildi=3543)
+```
+
+`o'qildi` doim 0 bo'lib qolsa — kesh ishlamayapti va ko'rsatma har safar
+to'liq narxda to'lanmoqda.
+
 ### Testlar
 
 ```bash

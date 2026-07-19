@@ -49,6 +49,14 @@ func main() {
 			docStore.Len(), dm.Types, dm.RulesAsOf)
 	}
 
+	// Har so'rovning token sarfini jurnalga yozamiz — xarajatni ko'rmasdan
+	// boshqarib bo'lmaydi. cache_read nolga teng bo'lib qolsa, kesh
+	// ishlamayapti degani va tizim ko'rsatmasi har safar to'liq to'lanadi.
+	llm.OnUsage = func(u llm.Usage) {
+		log.Printf("sarf: model=%s kirish=%d chiqish=%d kesh(yozildi=%d o'qildi=%d)",
+			u.Model, u.InputTokens, u.OutputTokens, u.CacheWrite, u.CacheRead)
+	}
+
 	llmClient := llm.New()
 	if llmClient.Available() {
 		log.Printf("AI yoqilgan (Claude)")

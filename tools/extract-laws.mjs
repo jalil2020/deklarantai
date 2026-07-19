@@ -132,6 +132,35 @@ function firstLine(text) {
 }
 
 /** Juda uzun parchani bo'laklarga bo'ladi (abzats chegarasida). */
+/**
+ * Chegaradan uzun abzatsni bo'laklarga ajratadi.
+ *
+ * Avval gap oxiridan (nuqta, ; yoki yangi qator) bo'lishga urinamiz —
+ * shunda parcha o'qiladigan bo'lib qoladi. Gap chegarasi topilmasa
+ * (masalan uzun jadval qatori), qat'iy kesamiz: yarim jumla bo'lsa ham,
+ * 94 KB lik parchadan ko'ra yaxshiroq.
+ */
+function hardSplit(para) {
+  const out = []
+  let rest = para
+  while (rest.length > MAX_CHUNK) {
+    const window = rest.slice(0, MAX_CHUNK)
+    // Oxirgi gap chegarasini qidiramiz, lekin juda oldinga qaytib
+    // ketmaymiz — aks holda parchalar juda mayda bo'lib ketardi.
+    let cut = Math.max(
+      window.lastIndexOf('. '),
+      window.lastIndexOf(';'),
+      window.lastIndexOf('\n'),
+    )
+    if (cut < MAX_CHUNK * 0.5) cut = MAX_CHUNK
+    else cut += 1
+    out.push(rest.slice(0, cut).trim())
+    rest = rest.slice(cut)
+  }
+  if (rest.trim()) out.push(rest.trim())
+  return out
+}
+
 function splitLong({ title, text }) {
   if (!title) title = firstLine(text)
   if (text.length <= MAX_CHUNK) return [{ title, text }]
@@ -141,6 +170,16 @@ function splitLong({ title, text }) {
     if (buf && buf.length + para.length > MAX_CHUNK) {
       parts.push(buf.trim())
       buf = ''
+    }
+    // Abzatsning O'ZI chegaradan uzun bo'lishi mumkin — bunday holda
+    // yuqoridagi shart hech qachon yordam bermaydi va parcha butunligicha
+    // qolib ketadi. Bir vaqtlar shu sababli 94 KB lik parcha bor edi:
+    // u promptga tushganda ~25 000 token yeb ketardi va kerakli jumla
+    // uning ichida ko'milib qolardi. Shuning uchun uzun abzatsni
+    // majburan bo'lamiz — avval gap chegarasidan, topilmasa qat'iy.
+    if (para.length > MAX_CHUNK) {
+      for (const piece of hardSplit(para)) parts.push(piece)
+      continue
     }
     buf += (buf ? '\n\n' : '') + para
   }
