@@ -224,3 +224,60 @@ func normalizeCode(code string) string {
 	}
 	return c + strings.Repeat("0", 10-len(c))
 }
+
+// Program — bitta imtiyoz dasturi (masalan ПКМ 352 — texnologik uskunalar).
+type Program struct {
+	Type   string   `json:"type"`
+	Text   string   `json:"text"`
+	Free   []string `json:"free"`            // qaysi to'lovdan: boj, aksiz, qqs, yigim
+	Laws   []string `json:"laws,omitempty"`  // asos hujjatlari
+	Ranges int      `json:"ranges"`          // nechta kod oralig'ini qamraydi
+	Codes  int      `json:"codes,omitempty"` // taxminiy kod soni (oraliqlar kengligi bo'yicha emas)
+}
+
+// Exemptions — barcha imtiyoz dasturlari ro'yxati.
+//
+// NEGA KERAK: imtiyoz ma'lumoti faqat aniq kod so'ralganda ko'rinardi.
+// "Qanday imtiyozlar bor?" degan savolga javob yo'q edi, holbuki
+// tadbirkor uchun bu eng qimmatli savollardan biri — imtiyoz boj va
+// QQS ni butunlay olib tashlashi mumkin.
+func (s *Store) Programs() []Program {
+	byType := map[string]*Program{}
+	for _, r := range s.rules {
+		t := s.types[r.Type]
+		if len(t.Free) == 0 {
+			continue
+		}
+		p := byType[r.Type]
+		if p == nil {
+			p = &Program{Type: r.Type, Text: t.Text, Free: t.Free}
+			byType[r.Type] = p
+		}
+		p.Ranges++
+		if r.Law != "" && !contains(p.Laws, r.Law) {
+			p.Laws = append(p.Laws, r.Law)
+		}
+		// Turdagi matn bo'sh bo'lsa, oraliqning o'z matnini olamiz.
+		if p.Text == "" && r.Text != "" {
+			p.Text = r.Text
+		}
+	}
+
+	out := make([]Program, 0, len(byType))
+	for _, p := range byType {
+		sort.Strings(p.Laws)
+		out = append(out, *p)
+	}
+	// Ko'p tovarni qamragani oldinda — foydalanuvchi uchun ehtimoli yuqori.
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Ranges > out[j].Ranges })
+	return out
+}
+
+func contains(xs []string, x string) bool {
+	for _, v := range xs {
+		if v == x {
+			return true
+		}
+	}
+	return false
+}

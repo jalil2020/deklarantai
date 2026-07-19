@@ -154,3 +154,53 @@ func TestNoExemptionIsEmpty(t *testing.T) {
 		t.Error("uchala kod ham imtiyozli chiqdi — oraliq mosligi juda keng bo'lishi mumkin")
 	}
 }
+
+// Imtiyoz dasturlari ro'yxati.
+//
+// NEGA KERAK: imtiyoz ma'lumoti faqat aniq kod so'ralganda ko'rinardi.
+// "Qanday imtiyozlar bor?" degan savolga javob yo'q edi.
+func TestPrograms(t *testing.T) {
+	got := load(t).Programs()
+	if len(got) < 20 {
+		t.Fatalf("dasturlar soni %d; 20 dan ko'p kutilgan", len(got))
+	}
+
+	// Eng yirigi oldinda bo'lishi kerak — foydalanuvchi uchun ehtimoli yuqori.
+	if got[0].Ranges < got[len(got)-1].Ranges {
+		t.Error("dasturlar qamrov bo'yicha tartiblanmagan")
+	}
+
+	// ПКМ 352 — o'xshashi ishlab chiqarilmaydigan texnologik uskunalar,
+	// eng ko'p qo'llaniladigan imtiyoz.
+	var pkm352 *Program
+	for i := range got {
+		if got[i].Type == "PKM352" {
+			pkm352 = &got[i]
+		}
+	}
+	if pkm352 == nil {
+		t.Fatal("ПКМ 352 dasturi topilmadi")
+	}
+	if len(pkm352.Free) != 2 {
+		t.Errorf("ПКМ 352 ozod qiladigan to'lovlar: %v; boj va qqs kutilgan", pkm352.Free)
+	}
+	if len(pkm352.Laws) == 0 {
+		t.Error("ПКМ 352 uchun huquqiy asos ko'rsatilmagan")
+	}
+	if pkm352.Text == "" {
+		t.Error("ПКМ 352 tavsifi bo'sh")
+	}
+}
+
+// Har bir dasturda kamida bitta to'lov turi va tavsif yoki asos bo'lishi kerak —
+// aks holda foydalanuvchiga hech narsa demaydi.
+func TestProgramsAreUsable(t *testing.T) {
+	for _, p := range load(t).Programs() {
+		if len(p.Free) == 0 {
+			t.Errorf("%s: qaysi to'lovdan ozod ekani ko'rsatilmagan", p.Type)
+		}
+		if p.Text == "" && len(p.Laws) == 0 {
+			t.Errorf("%s: na tavsif, na huquqiy asos bor", p.Type)
+		}
+	}
+}

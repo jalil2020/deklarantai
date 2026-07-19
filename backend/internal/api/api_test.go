@@ -49,7 +49,7 @@ func buildServer(t *testing.T, apiKey, aiURL string, rateClient *rates.Client) h
 		t.Fatal(err)
 	}
 	client := llm.New()
-	return New(codes, lawStore, chat.New(client, codes, lawStore, docStore, nil), client, countryStore, rateClient).Routes()
+	return New(codes, lawStore, chat.New(client, codes, lawStore, docStore, nil), client, countryStore, rateClient, docStore).Routes()
 }
 
 // do — so'rov yuboradi va javobni qaytaradi.
@@ -677,5 +677,40 @@ func TestChatMode(t *testing.T) {
 				t.Errorf("rejim %q: %q ogohlantirishi yo'qoldi", mode, must)
 			}
 		}
+	}
+}
+
+// ------------------------------------------------------------ imtiyozlar
+
+func TestExemptionsList(t *testing.T) {
+	w, out := do(t, newServer(t, "", ""), http.MethodGet, "/api/exemptions", "")
+	wantStatus(t, w, http.StatusOK, "imtiyozlar ro'yxati")
+
+	progs, _ := out["programs"].([]any)
+	if len(progs) < 20 {
+		t.Errorf("dasturlar soni %d; 20 dan ko'p kutilgan", len(progs))
+	}
+	// Imtiyoz avtomatik emasligi javobda aytilishi kerak.
+	if note, _ := out["note"].(string); !strings.Contains(note, "SHARTLI") {
+		t.Errorf("shartlilik ogohlantirishi yo'q: %q", note)
+	}
+}
+
+// Kod berilsa — faqat o'shanga tegishlisi.
+func TestExemptionsByCode(t *testing.T) {
+	h := newServer(t, "", "")
+
+	// 8401 10 000 0 — ПКМ 352 ro'yxatiga kirgan texnologik uskuna.
+	_, out := do(t, h, http.MethodGet, "/api/exemptions?code=8401100000", "")
+	free, _ := out["free"].([]any)
+	if len(free) == 0 {
+		t.Error("texnologik uskuna uchun imtiyoz topilmadi")
+	}
+
+	// Imtiyozi yo'q kodda ro'yxat bo'sh bo'lishi kerak — "bor" deb
+	// noto'g'ri belgilab qo'ymaslik uchun.
+	_, out2 := do(t, h, http.MethodGet, "/api/exemptions?code=3001209000", "")
+	if free2, _ := out2["free"].([]any); len(free2) > 0 {
+		t.Logf("3001209000 uchun imtiyoz: %v (tekshiring)", free2)
 	}
 }

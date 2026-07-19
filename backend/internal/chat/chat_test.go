@@ -555,3 +555,41 @@ func TestSharedRulesIdentical(t *testing.T) {
 			"ogohlantirishlar ajralib ketishi mumkin")
 	}
 }
+
+// Imtiyoz ro'yxati FAQAT so'rov shu haqda bo'lganda qo'shilishi kerak —
+// u uzun va har savolga qo'shilsa kontekstni behuda to'ldirardi.
+func TestProgramsBlockOnlyWhenAsked(t *testing.T) {
+	s := newService(t)
+
+	for _, q := range []string{
+		"qanday imtiyozlar bor",
+		"bojdan ozod tovarlar",
+		"какие льготы есть",
+		"nol stavka qo'llaniladigan tovarlar",
+	} {
+		if got := s.programsBlock(q); got == "" {
+			t.Errorf("%q: imtiyoz ro'yxati qo'shilmadi", q)
+		}
+	}
+	for _, q := range []string{
+		"traktor boji qancha",
+		"salom",
+	} {
+		if got := s.programsBlock(q); got != "" {
+			t.Errorf("%q: imtiyoz haqida emas, lekin ro'yxat qo'shildi", q)
+		}
+	}
+}
+
+// Ro'yxat imtiyozni VA'DA QILMASLIGI kerak — hammasi shartli.
+func TestProgramsBlockWarnsConditional(t *testing.T) {
+	got := newService(t).programsBlock("qanday imtiyozlar bor")
+	if got == "" {
+		t.Fatal("ro'yxat bo'sh")
+	}
+	for _, want := range []string{"SHARTLI", "VA'DA QILMA", "asos:"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("ro'yxatda %q yo'q", want)
+		}
+	}
+}

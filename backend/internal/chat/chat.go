@@ -389,6 +389,11 @@ func (s *Service) withRetrieval(ctx context.Context, history []llm.Message) ([]l
 			}
 		}
 	}
+	// Imtiyoz dasturlari — faqat so'rov shu haqda bo'lsa.
+	if pb := s.programsBlock(last.Content); pb != "" {
+		blocks = append(blocks, pb)
+	}
+
 	// Valyuta kursi — bloklar bo'lmasa ham foydali (masalan "bugun kurs qancha").
 	if rb := s.ratesBlock(ctx); rb != "" {
 		blocks = append(blocks, rb)
@@ -602,4 +607,66 @@ func formatCode(c string) string {
 		return c
 	}
 	return c[0:4] + " " + c[4:6] + " " + c[6:9] + " " + c[9:]
+}
+
+// exemptionWords — savol imtiyoz haqida ekanini bildiruvchi so'zlar.
+var exemptionWords = []string{
+	"imtiyoz", "ozod", "льгот", "освобожд", "nol stavka", "нулевая",
+	"bojsiz", "qqssiz", "chegirma",
+}
+
+// programsBlock — imtiyoz DASTURLARI ro'yxati.
+//
+// NEGA KERAK: imtiyoz ma'lumoti faqat aniq kod topilganda ko'rinardi.
+// "Qanday imtiyozlar bor?" degan umumiy savolga javob yo'q edi —
+// holbuki tadbirkor uchun bu eng qimmatli savollardan biri: imtiyoz
+// bojni ham, QQS ni ham butunlay olib tashlashi mumkin.
+//
+// Ro'yxat faqat SO'ROV imtiyoz haqida bo'lganda qo'shiladi: u uzun va
+// har savolga qo'shilsa kontekstni behuda to'ldirardi.
+func (s *Service) programsBlock(question string) string {
+	if s.docs == nil {
+		return ""
+	}
+	q := strings.ToLower(question)
+	hit := false
+	for _, w := range exemptionWords {
+		if strings.Contains(q, w) {
+			hit = true
+			break
+		}
+	}
+	if !hit {
+		return ""
+	}
+
+	progs := s.docs.Programs()
+	if len(progs) == 0 {
+		return ""
+	}
+
+	var b strings.Builder
+	b.WriteString("<IMTIYOZ_DASTURLARI>\n")
+	fmt.Fprintf(&b, "Bazada %d ta imtiyoz dasturi bor. Eng ko'p tovarni qamraganlari:\n\n", len(progs))
+
+	const top = 12
+	n := min(top, len(progs))
+	for _, p := range progs[:n] {
+		fmt.Fprintf(&b, "— %s dan ozod", strings.Join(p.Free, ", "))
+		if len(p.Laws) > 0 {
+			fmt.Fprintf(&b, " [asos: %s]", strings.Join(p.Laws, "; "))
+		}
+		fmt.Fprintf(&b, "\n  %s\n", strings.Join(strings.Fields(p.Text), " "))
+	}
+	if len(progs) > n {
+		fmt.Fprintf(&b, "\n(yana %d ta dastur bor — aniq tovar kodini aytsa, o'shanga tegishlisi ko'rsatiladi)\n", len(progs)-n)
+	}
+
+	b.WriteString("\nDIQQAT: bularning hammasi SHARTLI. Har birida shart bor —\n")
+	b.WriteString("kim olib kirmoqda, nima uchun, ro'yxatga kiritilganmi, muddat\n")
+	b.WriteString("o'tmaganmi. Foydalanuvchiga imtiyozni VA'DA QILMA: shartini ayt\n")
+	b.WriteString("va uning holatini so'ra. Aniq tovar kodi ma'lum bo'lsa, o'sha\n")
+	b.WriteString("kodga tegishli imtiyozni <HUJJAT_TALABLARI> blokidan ol.\n")
+	b.WriteString("</IMTIYOZ_DASTURLARI>")
+	return b.String()
 }

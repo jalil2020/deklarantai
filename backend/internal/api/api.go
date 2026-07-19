@@ -11,6 +11,7 @@ import (
 
 	"deklarant-ai/backend/internal/chat"
 	"deklarant-ai/backend/internal/countries"
+	"deklarant-ai/backend/internal/docs"
 	"deklarant-ai/backend/internal/duty"
 	"deklarant-ai/backend/internal/hscode"
 	"deklarant-ai/backend/internal/laws"
@@ -26,11 +27,12 @@ type Server struct {
 	llm       *llm.Client
 	countries *countries.Store // nil bo'lishi mumkin
 	rates     *rates.Client    // nil bo'lishi mumkin
+	docs      *docs.Store      // nil bo'lishi mumkin
 	limiter   *limiter
 }
 
 // New — server yaratadi.
-func New(codes *hscode.Store, lawStore *laws.Store, chatSvc *chat.Service, llmClient *llm.Client, countryStore *countries.Store, rateClient *rates.Client) *Server {
+func New(codes *hscode.Store, lawStore *laws.Store, chatSvc *chat.Service, llmClient *llm.Client, countryStore *countries.Store, rateClient *rates.Client, docStore *docs.Store) *Server {
 	return &Server{
 		codes:     codes,
 		laws:      lawStore,
@@ -38,6 +40,7 @@ func New(codes *hscode.Store, lawStore *laws.Store, chatSvc *chat.Service, llmCl
 		llm:       llmClient,
 		countries: countryStore,
 		rates:     rateClient,
+		docs:      docStore,
 		limiter:   newLimiter(),
 	}
 }
@@ -49,6 +52,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /api/hscode/search", s.handleHSSearch)
 	mux.HandleFunc("POST /api/duty/calculate", s.handleDutyCalc)
 	mux.HandleFunc("POST /api/utilfee/calculate", s.handleUtilFee)
+	mux.HandleFunc("GET /api/exemptions", s.handleExemptions)
 	mux.HandleFunc("POST /api/chat", s.handleChat)
 	mux.HandleFunc("POST /api/chat/stream", s.handleChatStream)
 	// Tartib muhim: CORS eng tashqarida bo'lishi kerak, aks holda
@@ -351,4 +355,35 @@ func (s *Server) handleChatStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = send(map[string]bool{"done": true})
+}
+
+// ---- Imtiyozlar ----
+
+// handleExemptions — imtiyoz dasturlari ro'yxati.
+//
+// ?code=8703231940 berilsa — faqat shu kodga tegishlisi.
+func (s *Server) handleExemptions(w http.ResponseWriter, r *http.Request) {
+	if s.docs == nil {
+		writeErr(w, http.StatusServiceUnavailable, "imtiyozlar bazasi yuklanmagan")
+		return
+	}
+	out := map[string]any{
+		"programs": s.docs.Programs(),
+		// Imtiyoz avtomatik emas — javobda ham shu aytilsin.
+		"note": "Imtiyozlar SHARTLI: kim olib kirmoqda, nima uchun, " +
+			"ro'yxatga kiritilganmi, muddat o'tmaganmi. Shartni tekshirmasdan " +
+			"imtiyozni qo'llab bo'lmaydi.",
+	}
+	if code := strings.TrimSpace(r.URL.Query().Get("code")); code != "" {
+		out["code"] = code
+		out["free"] = s.docs.Exemptions(code, docs.Import)
+		var forCode []docs.Requirement
+		for _, req := range s.docs.For(code, docs.Import) {
+			if req.Category == "imtiyoz" {
+				forCode = append(forCode, req)
+			}
+		}
+		out["for_code"] = forCode
+	}
+	writeJSON(w, http.StatusOK, out)
 }

@@ -81,7 +81,7 @@ func main() {
 	}
 
 	chatSvc := chat.New(llmClient, codes, lawStore, docStore, rateClient)
-	srv := api.New(codes, lawStore, chatSvc, llmClient, countryStore, rateClient)
+	srv := api.New(codes, lawStore, chatSvc, llmClient, countryStore, rateClient, docStore)
 
 	log.Printf("Server ishga tushdi: http://localhost%s", addr)
 	if err := http.ListenAndServe(addr, srv.Routes()); err != nil {

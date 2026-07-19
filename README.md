@@ -249,6 +249,36 @@ lekin natijada bu ochiq yoziladi. Qonun bo'yicha noma'lum kelib chiqishga
 ×2 qo'llanadi, ammo API chaqiruvchisi shunchaki maydonni to'ldirmagan
 bo'lishi mumkin — jim ravishda bojni ikkilantirish noto'g'ri javob bo'lardi.
 
+## Imtiyozlar (bojdan/QQS dan ozod tovarlar)
+
+Bazada **29 ta imtiyoz dasturi** bor — `docs.json` ning `imtiyoz` bo'limidan
+yig'iladi. Eng yiriklari:
+
+| Ozod qiladi | Oraliq | Asos | Nima |
+|---|---|---|---|
+| boj + QQS | 1 236 | ПКМ 352 (04.06.2021) | O'xshashi ishlab chiqarilmaydigan texnologik uskunalar |
+| boj | 498 | УП 55 / ПКМ 519 | Ayrim korxonalar uchun texnologik uskunalar |
+| boj + aksiz | 222 | РП Р-5350 | «O'zcharmsanoat» korxonalari uchun xomashyo |
+| boj | 154 | ПП 5262 (20.10.2021) | Nol stavka, 01.01.2027 ga qadar |
+| QQS | 129 | МЮ 2502 | Veterinariya dori vositalari xomashyosi |
+
+```bash
+curl http://localhost:8080/api/exemptions              # barcha dasturlar
+curl "http://localhost:8080/api/exemptions?code=8401100000"  # kod bo'yicha
+```
+
+Chatda ro'yxat **faqat savol imtiyoz haqida bo'lganda** qo'shiladi
+("imtiyoz", "ozod", "льгот", "nol stavka"…) — u uzun va har savolga
+qo'shilsa kontekstni behuda to'ldirardi. Aniq kod ma'lum bo'lsa, o'sha
+kodga tegishlisi `<HUJJAT_TALABLARI>` blokida keladi.
+
+⚠️ **Imtiyozlar SHARTLI va bu har joyda takrorlanadi.** Shart odatda:
+"yuridik shaxs tomonidan", "respublikada o'xshashi ishlab chiqarilmaydi"
+(Sanoat vazirligi ro'yxati), "ishlab chiqarish ehtiyoji uchun", yoki
+muddat ("01.01.2027 ga qadar"). Chat imtiyozni **va'da qilmaydi** —
+shartini aytadi va foydalanuvchining holatini so'raydi.
+`TestProgramsBlockWarnsConditional` buni qo'riqlaydi.
+
 ## Ikki rejim: deklarant / tadbirkor
 
 Chatda ikkita javob uslubi bor. So'rovga `mode` maydoni qo'shiladi
@@ -448,6 +478,7 @@ yo'naltiriladi (Vite proxy).
 | GET   | `/api/health`           | Server holati, AI mavjudligi        |
 | POST  | `/api/hscode/search`    | `{query, use_ai}` → mos kodlar      |
 | POST  | `/api/duty/calculate`   | `{customs_value, import_duty, excise, vat, quantity}` → hisob-kitob |
+| GET   | `/api/exemptions`       | `?code=` → imtiyoz dasturlari |
 | POST  | `/api/utilfee/calculate` | `{code, measure, age_years, weight_kg}` → utilizatsiya yig'imi (79) |
 | POST  | `/api/chat`             | `{messages, mode?}` → AI javobi (rasm: `images:[{media_type, data(base64)}]`) |
 | POST  | `/api/chat/stream`      | Xuddi shu, lekin javob **oqim** (SSE) bo'lib keladi |
