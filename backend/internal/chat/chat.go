@@ -53,6 +53,10 @@ QOIDALAR:
   Ular — bizning bazamizdan topilgan haqiqiy ma'lumot. Javobingni AVVALO o'shalarga
   asoslantir: ishlatgan kodingni va qonun moddasini ko'rsat
   (masalan: "Bojxona kodeksi, 346-modda").
+- Parchada "Rasmiy manba:" havolasi berilgan bo'lsa, uni javob oxirida keltir —
+  foydalanuvchi rasmiy matnni ochib tekshira olsin. Havolani O'ZING to'qib
+  chiqarma: faqat blokda berilganini yoz, berilmagan bo'lsa havola bermay,
+  hujjat nomi va sanasini ko'rsatish bilan cheklan.
 - Bloklarda javob bo'lmasa — buni ochiq ayt ("bazada bu haqda ma'lumot topilmadi")
   va o'z bilimingga tayanayotganingni eslat. Blokdagi ma'lumotni o'ylab topilgan
   modda raqami bilan to'ldirma.
@@ -175,6 +179,10 @@ func formatLaws(matches []laws.Match) string {
 		}
 		if c.Since != "" {
 			fmt.Fprintf(&b, ", %s dan amalda", c.Since)
+		}
+		// lex.uz havolasi — foydalanuvchi rasmiy matnni ochib tekshira olsin.
+		if c.Lex != "" {
+			fmt.Fprintf(&b, "\n  Rasmiy manba: %s", c.Lex)
 		}
 		fmt.Fprintf(&b, "\n  %s\n%s\n", c.Title, c.Text)
 	}

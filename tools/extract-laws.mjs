@@ -14,6 +14,7 @@ import zlib from 'node:zlib'
 import fs from 'node:fs'
 import path from 'node:path'
 import { toLatin } from './translit.mjs'
+import { lexLink } from './lex-links.mjs'
 
 const args = Object.fromEntries(process.argv.slice(2).map((a) => {
   const [k, v] = a.replace(/^--/, '').split('=')
@@ -167,6 +168,7 @@ for (const r of rows) {
       // asl holida qoldiriladi. Matn esa o'zbekchadan o'giriladi.
       name: name,
       date: r.doc_date || null,
+      lex: lexLink({ name, docId: r.doc_id, date: r.doc_date }),
       title: lang === 'uz' ? toLatin(c.title) : c.title,
       text: lang === 'uz' ? toLatin(c.text) : c.text,
       lang,
@@ -178,6 +180,7 @@ for (const r of rows) {
 
 const bytes = Buffer.byteLength(JSON.stringify(chunks))
 const mb = (b) => (b / 1024 / 1024).toFixed(1)
+const withLex = chunks.filter((c) => c.lex).length
 
 console.log(`Hujjatlar : core ${stats.core}, qisman ${stats.partial}, kalit so'z ${stats.keyword}`)
 console.log(`            (mavzuga kirmagan: ${stats.skipped}, BEKOR QILINGAN: ${stats.expired},`)
@@ -190,8 +193,24 @@ if (dead.length) {
   for (const re of dead) console.log(`     ${re}`)
 }
 console.log(`Parchalar : ${chunks.length.toLocaleString('ru-RU')}`)
-console.log(`Hajm      : ${mb(bytes)} MB`)
-console.log(`O'rtacha  : ${Math.round(bytes / chunks.length)} bayt/parcha`)
+console.log(`Hajm      : ${mb(bytes)} MB (o'rtacha ${Math.round(bytes / chunks.length)} bayt/parcha)`)
+console.log(`lex.uz    : ${withLex} parchada havola`
+  + ` (${Math.round((withLex / chunks.length) * 100)}%)`)
+
+// Havolasiz eng ko'p uchraydigan hujjatlarni ko'rsatamiz — lex-links.mjs ni
+// kengaytirish uchun aynan shular ustuvor.
+const noLex = new Map()
+for (const c of chunks) {
+  if (c.lex) continue
+  const k = `${c.date ?? '—'}  ${c.name}`
+  noLex.set(k, (noLex.get(k) ?? 0) + 1)
+}
+const topNoLex = [...noLex].sort((a, b) => b[1] - a[1]).slice(0, 5)
+if (topNoLex.length) {
+  console.log(`\n   Havolasiz, eng ko'p uchraydiganlari (lex-links.mjs ga qo'shsa bo'ladi):`)
+  for (const [k, n] of topNoLex)
+    console.log(`     ${String(n).padStart(4)}  ${k.slice(0, 68)}`)
+}
 
 if (args.dry) { db.close(); process.exit(0) }
 

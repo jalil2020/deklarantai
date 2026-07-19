@@ -36,6 +36,11 @@ type Chunk struct {
 	Name  string `json:"name"`  // hujjat nomi (ruscha — bazada shunday saqlanadi)
 	Date  string `json:"date"`  // hujjat sanasi
 	Since string `json:"since"` // amal qilish boshlangan sana
+
+	// Lex — hujjatning lex.uz dagi rasmiy havolasi (topilmasa bo'sh).
+	// Moslik tools/lex-links.mjs da qo'lda yuritiladi — manba bazasida
+	// lex.uz identifikatorlari yo'q.
+	Lex   string `json:"lex,omitempty"`
 	Title string `json:"title"` // modda sarlavhasi
 	Text  string `json:"text"`  // parcha matni
 	Lang  string `json:"lang"`  // "uz" (lotinlashtirilgan) yoki "ru"

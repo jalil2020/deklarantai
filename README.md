@@ -93,6 +93,13 @@ Parchalash — moddalar bo'yicha (`N-modda`), 4000 belgidan uzunlari bo'linadi.
 Matn **rasmiy o'zbekcha** versiyadan olinadi (ruschasi ayrim hujjatlarda mashina
 tarjimasi bo'lib, yuridik kuchga ega emas) va lotinga transliteratsiya qilinadi.
 
+Har bir parchaga imkon qadar **lex.uz havolasi** biriktiriladi, shunda AI javobda
+rasmiy manbani ko'rsatadi va foydalanuvchi o'zi tekshira oladi. Moslik
+`tools/lex-links.mjs` da **qo'lda** yuritiladi — manba bazasida lex.uz
+identifikatorlari yo'q (Bojxona kodeksi: bazada `39534`, lex.uz da `2876352`).
+Hozirgi qamrov — **65%**; ekstraktor havolasiz eng ko'p uchraydigan hujjatlarni
+ko'rsatib turadi, jadvalni shular bo'yicha kengaytirish mumkin.
+
 Chat har bir savolga bazadan **top-8 TIF TN kod** va **top-3 qonun parchasi**
 topib qo'shadi — butun baza promptga tashlanmaydi, shu sababli prompt keshi
 buzilmaydi. Qidiruv o'zbek tilining qo'shimchalarini hisobga oladi
