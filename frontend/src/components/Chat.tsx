@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { api, type ChatMessage, type ChatImage } from '../api'
+import Markdown from './Markdown'
 
 interface Props {
   aiAvailable: boolean
@@ -210,7 +211,7 @@ export default function Chat({ aiAvailable }: Props) {
     send(input, pending.map((p) => p.img))
   }
 
-  function useStarter(starter: string) {
+  function applyStarter(starter: string) {
     setInput(starter)
     taRef.current?.focus()
   }
@@ -273,7 +274,14 @@ export default function Chat({ aiAvailable }: Props) {
               {m.images?.map((img, j) => (
                 <img key={j} className="bubble-img" src={`data:${img.media_type};base64,${img.data}`} alt="rasm" />
               ))}
-              {m.content && <div className="bubble-text">{m.content}</div>}
+              {/* Foydalanuvchi xabari — xom matn: u markdown yozmaydi va
+                  yozgan belgisi o'zgarmasdan ko'rinishi kerak. AI javobi esa
+                  markdown (jadval, sarlavha, qalin) bo'lib keladi. */}
+              {m.content && (
+                <div className="bubble-text">
+                  {m.role === 'assistant' ? <Markdown text={m.content} /> : m.content}
+                </div>
+              )}
             </div>
           ))}
           {loading && (
@@ -324,7 +332,7 @@ export default function Chat({ aiAvailable }: Props) {
               <span className="chip-ic">📎</span> Rasm biriktirish
             </button>
             {QUICK.map((q) => (
-              <button key={q.label} className="chip" onClick={() => useStarter(q.starter)}>
+              <button key={q.label} className="chip" onClick={() => applyStarter(q.starter)}>
                 <span className="chip-ic">{q.icon}</span> {q.label}
               </button>
             ))}
