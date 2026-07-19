@@ -6,6 +6,7 @@ package hscode
 
 import (
 	"encoding/json"
+	"math"
 	"os"
 	"sort"
 	"strings"
@@ -167,15 +168,97 @@ func (s *Store) Search(query string, limit int) []Match {
 		return s.searchByCode(digits, limit)
 	}
 
-	terms := strings.Fields(q)
+	terms := contentTerms(strings.Fields(q))
+	if len(terms) == 0 {
+		return nil
+	}
+	idf := idfOf(s.codes, terms)
+
 	var matches []Match
 	for i := range s.codes {
-		if sc := score(&s.codes[i], q, terms); sc > 0 {
+		if sc := score(&s.codes[i], q, terms, idf); sc > 0 {
 			matches = append(matches, Match{Code: s.codes[i], Score: sc})
 		}
 	}
 	sortMatches(matches)
 	return trim(matches, limit)
+}
+
+// processWords — TOVAR emas, JARAYON haqidagi so'zlar.
+//
+// Foydalanuvchi butun jumla yozadi ("10 000 dollarlik traktor import qilsam
+// qancha to'lov chiqadi?"), biz esa undan TOVARNI topishimiz kerak. Bu
+// so'zlar tovar tavsiflarida ham uchraydi va qidiruvni buzadi:
+//
+//	"to'lov"  → 9704 "to'lov markalari" (pochta markalari)
+//	"jadval"  → 9504 "stol o'yinlari"
+//
+// Haqiqiy misolda "…traktor import qilsam qancha to'lov chiqadi?" so'rovi
+// 8701 (traktorlar) o'rniga 9704 (pochta markalari) ni birinchi qilgan edi:
+// "to'lov" atamasi "traktor" dan kamroq uchraganligi uchun og'irroq bo'lgan.
+//
+// DIQQAT: ro'yxat faqat MA'NOLI atama qolganda qo'llanadi. "bojxona to'lovi"
+// deb qidirilsa, hamma so'z chiqib ketardi — bunda filtrsiz qidiramiz.
+var processWords = map[string]bool{
+	"import": true, "eksport": true, "qancha": true, "qanday": true,
+	"kerak": true, "javob": true, "javobni": true, "ber": true, "bering": true,
+	"ko'rsat": true, "jadval": true, "bilan": true, "uchun": true,
+	"to'lov": true, "to'lovlar": true, "tolov": true, "kurs": true,
+	"narx": true, "narxi": true, "summa": true, "hujjat": true, "hujjatlar": true,
+	"qilsam": true, "qilmoqchiman": true, "chiqadi": true, "boj": true,
+	"bojxona": true, "soliq": true, "aksiz": true, "dollarlik": true,
+	"dollar": true, "so'm": true, "som": true, "olib": true, "kirish": true,
+	"hisobla": true, "hisoblab": true, "mening": true,
+}
+
+// contentTerms — so'rovdan tovarga oid atamalarni ajratadi.
+func contentTerms(fields []string) []string {
+	var kept, all []string
+	for _, t := range fields {
+		t = strings.Trim(t, ".,!?()[]:;\"")
+		if len([]rune(t)) < 3 {
+			continue
+		}
+		all = append(all, t)
+		if !processWords[t] {
+			kept = append(kept, t)
+		}
+	}
+	// Hammasi jarayon so'zi bo'lsa (masalan "bojxona to'lovi") — filtrsiz.
+	if len(kept) == 0 {
+		return all
+	}
+	return kept
+}
+
+// idfOf — har bir atamaning noyobligini hisoblaydi.
+//
+// NEGA KERAK: atamalar teng vaznda bo'lsa, ko'p UMUMIY so'zga mos kelgan kod
+// bitta MA'NOLI so'zga mos kelganini bosib ketadi. Haqiqiy misol:
+//
+//	"dori vositalari (bez ekstraktlari) import qilmoqchiman.
+//	 Qanday hujjatlar kerak? Jadval bilan ko'rsat."
+//
+// Bu so'rov 9504 (bilyard, videoo'yin konsollari) ni birinchi o'ringa
+// chiqargan edi — u "bilan", "kerak", "jadval", "ko'rsat" kabi bo'sh
+// so'zlarga mos kelgani uchun. Holbuki "ekstrakt" atamasi 3001 ni aniq
+// ko'rsatib turardi. IDF bilan noyob atama og'irroq bo'ladi.
+func idfOf(codes []Code, terms []string) []float64 {
+	idf := make([]float64, len(terms))
+	n := float64(len(codes))
+	for j, t := range terms {
+		if len([]rune(t)) < 3 {
+			continue
+		}
+		df := 0
+		for i := range codes {
+			if strings.Contains(codes[i].search, t) {
+				df++
+			}
+		}
+		idf[j] = math.Log((n + 1) / (float64(df) + 1))
+	}
+	return idf
 }
 
 func (s *Store) searchByCode(digits string, limit int) []Match {
@@ -193,17 +276,18 @@ func (s *Store) searchByCode(digits string, limit int) []Match {
 	return trim(matches, limit)
 }
 
-func score(c *Code, q string, terms []string) float64 {
+func score(c *Code, q string, terms []string, idf []float64) float64 {
 	var sc float64
+	// To'liq so'rov aynan uchrasa — eng kuchli signal, IDF siz.
 	if strings.Contains(c.search, q) {
 		sc += 10
 	}
-	for _, t := range terms {
+	for j, t := range terms {
 		if len([]rune(t)) < 3 {
 			continue // juda qisqa so'zlar shovqin beradi
 		}
 		if strings.Contains(c.search, t) {
-			sc += 3
+			sc += 3 * idf[j]
 		}
 	}
 	if sc == 0 {
@@ -219,16 +303,16 @@ func score(c *Code, q string, terms []string) float64 {
 	// Ikkalasi ham mos keladi, lekin foydalanuvchi traktorni so'ragan.
 	head := normalize(headSegment(c.PathUZ) + " " + headSegment(c.PathRU))
 	leaf := normalize(c.NameUZ + " " + c.NameRU)
-	for _, t := range terms {
+	for j, t := range terms {
 		if len([]rune(t)) < 3 {
 			continue
 		}
 		if strings.Contains(head, t) {
-			sc += 8
+			sc += 8 * idf[j]
 		}
 		// Yakuniy tugun nomida uchrasa — aniqroq moslik.
 		if strings.Contains(leaf, t) {
-			sc += 4
+			sc += 4 * idf[j]
 		}
 	}
 	return sc

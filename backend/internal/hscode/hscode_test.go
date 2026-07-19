@@ -166,3 +166,51 @@ func trunc(s string, n int) string {
 	}
 	return string([]rune(s)[:n]) + "…"
 }
+
+// Butun jumla bilan qidirilganda ham TOVAR topilishi kerak.
+//
+// Foydalanuvchi qisqa so'z emas, gap yozadi. Undagi "to'lov", "jadval",
+// "hujjat" kabi so'zlar JARAYON haqida, tovar haqida emas — lekin ular
+// tovar tavsiflarida ham uchraydi va qidiruvni buzadi:
+//
+//	"…traktor import qilsam qancha to'lov chiqadi?" → 9704 "to'lov markalari"
+//	"…hujjatlar kerak? Jadval bilan ko'rsat."       → 9504 "stol o'yinlari"
+//
+// Ikkalasi ham haqiqiy xato edi; contentTerms shuni to'g'irlaydi.
+func TestSentenceQueryFindsGoods(t *testing.T) {
+	s := load(t)
+	cases := []struct{ query, wantPrefix string }{
+		{"10 000 dollarlik traktor import qilsam qancha to'lov chiqadi? Kurs 12 800. Javobni jadval bilan ber.", "8701"},
+		{"dori vositalari (bez ekstraktlari) import qilmoqchiman. Qanday hujjatlar kerak? Jadval bilan ko'rsat.", "30"},
+		{"muzlatgich import qilsam qancha to'lov chiqadi", "8418"},
+	}
+	for _, c := range cases {
+		got := s.Search(c.query, 5)
+		if len(got) == 0 {
+			t.Errorf("%q: hech narsa topilmadi", c.query)
+			continue
+		}
+		found := false
+		for _, m := range got {
+			if strings.HasPrefix(m.Code.Code, c.wantPrefix) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			var codes []string
+			for _, m := range got {
+				codes = append(codes, m.Code.Code)
+			}
+			t.Errorf("%q:\n  kutilgan %s… bilan boshlanuvchi kod\n  olingan: %v",
+				c.query, c.wantPrefix, codes)
+		}
+	}
+}
+
+// Faqat jarayon so'zlaridan iborat so'rov bo'sh qolmasligi kerak.
+func TestAllProcessWordsFallback(t *testing.T) {
+	if got := load(t).Search("bojxona to'lov", 3); len(got) == 0 {
+		t.Error("hamma atama filtrlanib ketdi; filtrsiz qidirish kerak edi")
+	}
+}
