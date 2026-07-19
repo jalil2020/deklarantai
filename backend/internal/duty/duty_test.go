@@ -2,6 +2,7 @@ package duty
 
 import (
 	"math"
+	"strings"
 	"testing"
 	"time"
 )
@@ -140,4 +141,21 @@ func TestFeeExempt(t *testing.T) {
 		Date: testDate, CustomsValue: 60_000_000, USDRate: 12_000, VAT: 12, FeeExempt: true,
 	})
 	eq(t, find(r, "10").Amount, 0, "yig'im (ozod)")
+}
+
+// FeeScaleText tizim ko'rsatmasiga qo'yiladi — u yerda raqamlar qo'lda
+// yozilmasligi kerak. Bu test matn haqiqatan feeScale/brvHistory dan
+// chiqayotganini va chegaralar tushib qolmaganini qo'riqlaydi.
+func TestFeeScaleText(t *testing.T) {
+	got := FeeScaleText(testDate)
+	for _, want := range []string{
+		"BRV: 412 000 so'm",
+		"10 000 USD gacha → 1×BRV = 412 000 so'm",
+		"10 000–20 000 USD → 1,5×BRV = 618 000 so'm",
+		"1 000 000 USD dan yuqori → 25×BRV = 10 300 000 so'm",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("shkala matnida yo'q:\n  kutilgan: %q\n  olingan:\n%s", want, got)
+		}
+	}
 }

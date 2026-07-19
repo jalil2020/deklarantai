@@ -18,7 +18,9 @@
 package duty
 
 import (
+	"fmt"
 	"math"
+	"strings"
 	"time"
 )
 
@@ -65,6 +67,48 @@ var feeScale = []struct {
 	{500_000, 15},
 	{1_000_000, 20},
 	{math.Inf(1), 25},
+}
+
+// FeeScaleText — yig'im shkalasini chat kontekstiga qo'yish uchun matn
+// ko'rinishida qaytaradi.
+//
+// NEGA GENERATSIYA: shkalani tizim ko'rsatmasiga qo'lda ko'chirib yozsak,
+// ikkita manba paydo bo'lardi — stavka o'zgarganda biri yangilanib,
+// ikkinchisi eskirib qolishi mumkin. Shu sababli matn aynan feeScale va
+// brvHistory dan chiqariladi: raqam bir joyda o'zgarsa, prompt ham o'zgaradi.
+func FeeScaleText(on time.Time) string {
+	brv := BRV(on)
+	var b strings.Builder
+	fmt.Fprintf(&b, "BRV: %s so'm\n", thousands(brv))
+	prev := float64(0)
+	for _, s := range feeScale {
+		var band string
+		switch {
+		case math.IsInf(s.UpToUSD, 1):
+			band = thousands(prev) + " USD dan yuqori"
+		case prev == 0:
+			band = thousands(s.UpToUSD) + " USD gacha"
+		default:
+			band = thousands(prev) + "–" + thousands(s.UpToUSD) + " USD"
+		}
+		fmt.Fprintf(&b, "  %s → %s×BRV = %s so'm\n",
+			band, trimNum(s.Multiplier), thousands(s.Multiplier*brv))
+		prev = s.UpToUSD
+	}
+	return b.String()
+}
+
+// thousands — 412000 → "412 000".
+func thousands(v float64) string {
+	s := itoa(int64(math.Round(v)))
+	var b []byte
+	for i, c := range []byte(s) {
+		if i > 0 && (len(s)-i)%3 == 0 {
+			b = append(b, ' ')
+		}
+		b = append(b, c)
+	}
+	return string(b)
 }
 
 // feeMultiplier — bojxona qiymatiga (USD da) mos BRV karrasini qaytaradi.

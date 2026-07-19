@@ -9,7 +9,9 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
+	"deklarant-ai/backend/internal/duty"
 	"deklarant-ai/backend/internal/hscode"
 	"deklarant-ai/backend/internal/laws"
 	"deklarant-ai/backend/internal/llm"
@@ -34,7 +36,8 @@ diqqat bilan o'qib chiq va shularga asoslanib javob ber.
 
 BOJXONA TO'LOVLARI (GTD kodlari bilan):
   10. Bojxona yig'imi — bojxona qiymatining dollardagi ekvivalentiga qarab,
-      BRV ning 1 dan 25 karragacha (ПКМ 55, 31.01.2025).
+      BRV ning karrasi (ПКМ 55, 31.01.2025). Shkala quyida berilgan —
+      yig'imni DOIM hisoblab ber, "alohida belgilanadi" deb qoldirma.
   12. Ko'rik — ish vaqtida 25% BRV/soat, tashqarida 2×BRV/soat (to'liq soatga yaxlitlanadi).
   20. Bojxona boji     = bojxona qiymati × boj%
   21. Qo'shimcha boj   = bojxona qiymati × qo'shimcha%
@@ -110,6 +113,12 @@ func (s *Service) systemPrompt() string {
 	m := s.codes.Meta()
 	var b strings.Builder
 	b.WriteString(basePrompt)
+
+	// Yig'im shkalasi duty paketidan olinadi — bu yerda qo'lda yozilmaydi,
+	// aks holda stavka o'zgarganda kalkulyator bilan prompt ajralib qolardi.
+	fmt.Fprintf(&b, "\n\nBOJXONA YIG'IMI SHKALASI (ПКМ 55, %s holatiga):\n%s",
+		m.RatesAsOf, duty.FeeScaleText(time.Now()))
+
 	fmt.Fprintf(&b, `
 
 QO'LINGDAGI BAZA:
@@ -214,8 +223,29 @@ func formatMatches(m hscode.Meta, matches []hscode.Match) string {
 		}
 		b.WriteString("\n")
 	}
+	// Ro'yxat oxirida yana bir bor eslatamiz. Sinovda model har bir kod
+	// yonidagi "aksiz: bu bazada yo'q" belgisini ko'ra turib ham "traktor
+	// aksizli tovar emas" degan xulosaga kelgan — ya'ni yo'qlikni "0%" deb
+	// o'qigan. Bu yerda bo'shliq aniq aytiladi.
+	if !anyExcise(matches) {
+		b.WriteString("\n⚠️ Yuqoridagi kodlarning HECH BIRIDA aksiz ma'lumoti yo'q.\n" +
+			"Bu \"aksiz to'lanmaydi\" degani EMAS. Aksiz haqida xulosa faqat\n" +
+			"<QONUNCHILIKDAN> blokidagi Soliq kodeksi 289¹–289³-moddalariga\n" +
+			"tayanib chiqariladi. Ular blokda bo'lmasa — \"tasdiqlay olmayman,\n" +
+			"289¹–289³-moddalarni tekshiring\" deb ayt, o'zingdan hukm qilma.\n")
+	}
 	b.WriteString("</TIF_TN_BAZASIDAN>")
 	return b.String()
+}
+
+// anyExcise — topilgan kodlar ichida aksiz ma'lumoti bori bormi.
+func anyExcise(matches []hscode.Match) bool {
+	for _, m := range matches {
+		if m.Code.Excise != nil {
+			return true
+		}
+	}
+	return false
 }
 
 // formatCode — "8701211019" → "8701 21 101 9".

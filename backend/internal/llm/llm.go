@@ -62,6 +62,13 @@ type Message struct {
 	Images  []Image `json:"images,omitempty"`
 }
 
+// DIQQAT: `temperature` bu yerda ATAYLAB yo'q.
+//
+// Javob barqarorligini oshirish uchun temperature=0.2 qo'yib ko'rildi, ammo
+// API xato qaytardi: "`temperature` is deprecated for this model"
+// (claude-opus-4-8). Shuning uchun javob turg'unligi so'rov parametri bilan
+// emas, kontekstni aniq yozish bilan ta'minlanadi — masalan aksiz bo'shlig'i
+// chat.formatMatches da ochiq ogohlantirish sifatida chiqariladi.
 type apiRequest struct {
 	Model     string       `json:"model"`
 	MaxTokens int          `json:"max_tokens"`
