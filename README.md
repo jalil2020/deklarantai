@@ -290,7 +290,16 @@ Chatda ikkita javob uslubi bor. So'rovga `mode` maydoni qo'shiladi
 | Javob | Qisqa, jadval, GTD kodlari (10, 20, 29, 79) | Jami summa oldinda, tushuntirish bilan |
 | Atamalar | Tushuntirilmaydi | Darrov ochib beriladi ("ST-1 — kelib chiqish sertifikati") |
 | Ma'lumot yetishmasa | Variantlar beriladi | Oddiy tilda so'raladi |
-| Oxirida | — | "Keyingi qadamlar" ro'yxati |
+| Oxirida | — | "Keyingi qadamlar" + murojaat kanali |
+
+**Murojaat kanali.** Tadbirkor rejimida javob oxirida murojaat havolasi
+beriladi (`CONTACT_TELEGRAM`, sukut bo'yicha `t.me/declarant_pro`).
+Deklarant rejimida u **yo'q** — professional foydalanuvchiga kerak emas.
+
+⚠️ Havola **oddiy tavsiya** sifatida beriladi, rasmiy davlat manbasi
+sifatida emas, va `customs.uz` yoki bojxona brokeridan tasdiqlash
+maslahatini **almashtirmaydi** — ikkalasi ham qoladi.
+`TestContactDoesNotReplaceSafetyAdvice` buni qo'riqlaydi.
 
 ⚠️ **Eng muhim qoida: rejim faqat USLUBNI o'zgartiradi.** Faktlar,
 stavkalar va ogohlantirishlar ikkalasida **bir xil**.
@@ -392,6 +401,7 @@ Kesh: tarixiy kurs muddatsiz (u o'zgarmaydi), bugungisi kun oxirigacha.
 | O'zgaruvchi | Sukut | Tavsif |
 |---|---|---|
 | `CBU_API_URL` | cbu.uz | Boshqa manba yoki testdagi soxta server |
+| `CONTACT_TELEGRAM` | t.me/declarant_pro | Tadbirkor rejimida beriladigan murojaat kanali |
 
 ## Xarajat nazorati
 

@@ -8,6 +8,7 @@ package chat
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -56,6 +57,19 @@ const (
 	ModeBusiness Mode = "tadbirkor"
 )
 
+// defaultContact — tadbirkorga beriladigan murojaat kanali.
+// CONTACT_TELEGRAM muhit o'zgaruvchisi bilan almashtiriladi.
+const defaultContact = "https://t.me/declarant_pro"
+
+// contact — murojaat kanali. Prompt ichida qo'lda yozilmaydi: kanal
+// o'zgarsa, ko'rsatmaga tegmasdan sozlash mumkin bo'lsin.
+func contact() string {
+	if v := strings.TrimSpace(os.Getenv("CONTACT_TELEGRAM")); v != "" {
+		return v
+	}
+	return defaultContact
+}
+
 // ParseMode — so'rovdagi qiymatni rejimga aylantiradi.
 // Noma'lum yoki bo'sh bo'lsa — deklarant (asosiy auditoriya).
 func ParseMode(s string) Mode {
@@ -93,7 +107,11 @@ USLUB:
   tovar qaysi davlatda ishlab chiqarilganini tasdiqlovchi hujjat)".
 - U SO'RAMAGAN, lekin kerak bo'ladigan narsani ham ayt: litsenziya,
   sertifikat, ro'yxatdan o'tish.
-- Javob oxirida "Keyingi qadamlar" ro'yxati ber.
+- Javob oxirida "Keyingi qadamlar" ro'yxati ber. Oxirgi band sifatida
+  murojaat kanalini qo'sh: {{CONTACT}}
+  Uni oddiy tavsiya sifatida ber ("savol qolsa — shu yerda yozing"),
+  rasmiy davlat manbasi sifatida EMAS. U customs.uz yoki bojxona
+  brokeridan tasdiqlash maslahatini ALMASHTIRMAYDI — ikkalasi ham qolsin.
 - GTD grafalari va to'lov kodlarini ko'rsatma — ular unga hech narsa
   demaydi. "Bojxona yig'imi" deb yoz, "10-kod" deb emas.
 - Ma'lumot yetishmasa — ODDIY TIL bilan so'ra ("mashina necha yilligini
@@ -280,7 +298,7 @@ func (s *Service) Available() bool { return s.client.Available() }
 // Kodlar bu yerga QO'SHILMAYDI — ular so'rovga qarab kontekstga qo'shiladi,
 // shu tufayli prompt keshi buzilmaydi.
 func (s *Service) systemPrompt(mode Mode) string {
-	base := promptIntro[mode] + sharedRules
+	base := strings.ReplaceAll(promptIntro[mode], "{{CONTACT}}", contact()) + sharedRules
 	if s.codes == nil {
 		return base
 	}

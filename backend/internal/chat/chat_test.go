@@ -626,3 +626,51 @@ func TestSpecificExemptionBeatsGeneralList(t *testing.T) {
 		t.Error("umumiy savolga imtiyoz ro'yxati qo'shilmadi")
 	}
 }
+
+// Murojaat kanali FAQAT tadbirkor rejimida bo'lishi kerak —
+// deklarant professional, unga reklama kerak emas.
+func TestContactOnlyInBusinessMode(t *testing.T) {
+	s := newService(t)
+
+	biz := s.systemPrompt(ModeBusiness)
+	if !strings.Contains(biz, defaultContact) {
+		t.Errorf("tadbirkor rejimida murojaat kanali yo'q")
+	}
+	if dec := s.systemPrompt(ModeDeclarant); strings.Contains(dec, defaultContact) {
+		t.Error("deklarant rejimiga ham kanal qo'shildi")
+	}
+	// Shablon o'rniga haqiqiy havola qo'yilishi kerak.
+	if strings.Contains(biz, "{{CONTACT}}") {
+		t.Error("shablon almashtirilmadi")
+	}
+}
+
+// Kanal xavfsizlik maslahatini ALMASHTIRMASLIGI kerak.
+//
+// Havola — oddiy murojaat yo'li, rasmiy manba emas. customs.uz va
+// broker tasdig'i haqidagi maslahat baribir qolishi shart.
+func TestContactDoesNotReplaceSafetyAdvice(t *testing.T) {
+	got := newService(t).systemPrompt(ModeBusiness)
+	for _, want := range []string{
+		"ALMASHTIRMAYDI",
+		"rasmiy davlat manbasi sifatida EMAS",
+		"customs.uz",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("ko'rsatmada %q yo'q", want)
+		}
+	}
+}
+
+// Kanal sozlanadigan bo'lishi kerak — o'zgarsa promptga tegmasdan.
+func TestContactConfigurable(t *testing.T) {
+	t.Setenv("CONTACT_TELEGRAM", "https://t.me/boshqa_kanal")
+	got := newService(t).systemPrompt(ModeBusiness)
+
+	if !strings.Contains(got, "https://t.me/boshqa_kanal") {
+		t.Error("muhit o'zgaruvchisidagi kanal ishlatilmadi")
+	}
+	if strings.Contains(got, defaultContact) {
+		t.Error("sukutdagi kanal ham qoldi")
+	}
+}
