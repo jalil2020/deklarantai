@@ -43,14 +43,71 @@ const (
 	shortQuestion = 120
 )
 
-const basePrompt = `Sen "Deklarant AI" — O'zbekiston Respublikasi bojxona ishlari bo'yicha yordamchisan.
+// Mode — javob uslubi. Faktlar va ogohlantirishlar ikkala rejimda BIR XIL;
+// farq faqat tilda, uzunlikda va tuzilmada.
+type Mode string
 
-Vazifang: foydalanuvchilarga bojxona rasmiylashtiruvi bo'yicha yordam berish:
-- Tovar tavsifi yoki RASMI (invoys, tovar surati, hujjat) asosida TIF TN kodini aniqlash.
-- Bojxona to'lovlarini hisoblash.
-- Tovarga qanday HUJJAT kerakligini aytish (litsenziya, sertifikat, imtiyoz).
-- Import/eksport tartiblari va qonunchilik bo'yicha maslahat.
+const (
+	// ModeDeclarant — kasbiy foydalanuvchi: TIF TN, GTD grafalari va
+	// rejimlarni biladi. Qisqa jadval, kod va modda raqami kerak.
+	ModeDeclarant Mode = "deklarant"
+	// ModeBusiness — tadbirkor: atamalarni bilmaydi. "Menga qancha
+	// turadi va nima qilishim kerak" degan savolga javob kerak.
+	ModeBusiness Mode = "tadbirkor"
+)
 
+// ParseMode — so'rovdagi qiymatni rejimga aylantiradi.
+// Noma'lum yoki bo'sh bo'lsa — deklarant (asosiy auditoriya).
+func ParseMode(s string) Mode {
+	if Mode(strings.ToLower(strings.TrimSpace(s))) == ModeBusiness {
+		return ModeBusiness
+	}
+	return ModeDeclarant
+}
+
+// promptIntro — rejimga qarab persona va uslub.
+//
+// DIQQAT: bu yerda FAQAT uslub bo'ladi. Har qanday fakt, stavka yoki
+// ogohlantirish — sharedRules ichida, ikkala rejim uchun bitta manba.
+// Aks holda ular vaqt o'tib bir-biridan ajralib ketardi.
+var promptIntro = map[Mode]string{
+	ModeDeclarant: `Sen "Deklarant AI" — O'zbekiston bojxona rasmiylashtiruvi bo'yicha yordamchisan.
+Foydalanuvchi — TAJRIBALI DEKLARANT. U TIF TN, GTD grafalari va bojxona
+rejimlarini biladi.
+
+USLUB:
+- Qisqa va zich. Jadval afzal, uzun izoh emas.
+- To'lovlarni GTD kodlari bilan ber: 10, 12, 20, 21, 27, 29, 79.
+- Kod va modda raqamini qator ichida ko'rsat, alohida abzats qilma.
+- Atamalarni tushuntirma — u biladi.
+- Ma'lumot yetishmasa, savol berish o'rniga VARIANTLARNI ber
+  ("yangi bo'lsa 120 BRV, 3 yildan oshgan bo'lsa 210 BRV").`,
+
+	ModeBusiness: `Sen "Deklarant AI" — O'zbekiston bojxona rasmiylashtiruvi bo'yicha yordamchisan.
+Foydalanuvchi — TADBIRKOR. U tovar olib kelmoqchi, lekin bojxona
+atamalarini bilmaydi va nimani so'rashni ham bilmaydi.
+
+USLUB:
+- Birinchi qatorda JAMI SUMMA. Tafsilot keyin.
+- Atamani ishlatsang, darrov tushuntir: "ST-1 (kelib chiqish sertifikati —
+  tovar qaysi davlatda ishlab chiqarilganini tasdiqlovchi hujjat)".
+- U SO'RAMAGAN, lekin kerak bo'ladigan narsani ham ayt: litsenziya,
+  sertifikat, ro'yxatdan o'tish.
+- Javob oxirida "Keyingi qadamlar" ro'yxati ber.
+- GTD grafalari va to'lov kodlarini ko'rsatma — ular unga hech narsa
+  demaydi. "Bojxona yig'imi" deb yoz, "10-kod" deb emas.
+- Ma'lumot yetishmasa — ODDIY TIL bilan so'ra ("mashina necha yilligini
+  bilasizmi?"), texnik atama bilan emas.`,
+}
+
+// sharedRules — FAKTLAR VA OGOHLANTIRISHLAR. Ikkala rejim uchun bitta
+// manba: soddalashtirilgan rejimda ogohlantirish tushib qolmasligi kerak.
+//
+// Bu seansda tuzatilgan xatolarning aksariyati bir turdan edi — xavfli
+// narsani jim tushirib qoldirish (aksiz "0%", imtiyoz e'tiborsiz, kelib
+// chiqish hisobga olinmagan). "Soddalashtirilgan rejim" — o'sha xatoning
+// qaytish yo'li. Shuning uchun bu blok bo'linmaydi.
+const sharedRules = `
 Agar foydalanuvchi rasm yuborsa — undagi tovar, miqdor, narx kabi ma'lumotlarni
 diqqat bilan o'qib chiq va shularga asoslanib javob ber.
 
@@ -222,13 +279,14 @@ func (s *Service) Available() bool { return s.client.Available() }
 // systemPrompt — barqaror tizim ko'rsatmasi.
 // Kodlar bu yerga QO'SHILMAYDI — ular so'rovga qarab kontekstga qo'shiladi,
 // shu tufayli prompt keshi buzilmaydi.
-func (s *Service) systemPrompt() string {
+func (s *Service) systemPrompt(mode Mode) string {
+	base := promptIntro[mode] + sharedRules
 	if s.codes == nil {
-		return basePrompt
+		return base
 	}
 	m := s.codes.Meta()
 	var b strings.Builder
-	b.WriteString(basePrompt)
+	b.WriteString(base)
 
 	// Yig'im shkalasi duty paketidan olinadi — bu yerda qo'lda yozilmaydi,
 	// aks holda stavka o'zgarganda kalkulyator bilan prompt ajralib qolardi.
@@ -262,22 +320,22 @@ QO'LINGDAGI BAZA:
 }
 
 // Reply — suhbat tarixiga javob qaytaradi.
-func (s *Service) Reply(ctx context.Context, history []llm.Message) (string, error) {
+func (s *Service) Reply(ctx context.Context, mode Mode, history []llm.Message) (string, error) {
 	msgs, _ := s.withRetrieval(ctx, history)
-	return s.client.Complete(ctx, s.systemPrompt(), msgs)
+	return s.client.Complete(ctx, s.systemPrompt(mode), msgs)
 }
 
 // ReplyStream — javobni bo'lak-bo'lak qaytaradi (SSE uchun).
 //
 // Retrieval Reply bilan bir xil — farqi faqat javobning yetkazilishida,
 // shuning uchun ikkala yo'l ham bir xil kontekst va ko'rsatma bilan ishlaydi.
-func (s *Service) ReplyStream(ctx context.Context, history []llm.Message, onChunk llm.StreamFunc) error {
+func (s *Service) ReplyStream(ctx context.Context, mode Mode, history []llm.Message, onChunk llm.StreamFunc) error {
 	msgs, retrieved := s.withRetrieval(ctx, history)
 	var text string
 	if len(history) > 0 {
 		text = history[len(history)-1].Content
 	}
-	return s.client.Stream(ctx, modelFor(text, retrieved), s.systemPrompt(), msgs, onChunk)
+	return s.client.Stream(ctx, modelFor(text, retrieved), s.systemPrompt(mode), msgs, onChunk)
 }
 
 // withRetrieval — oxirgi foydalanuvchi savoliga mos TIF TN kodlari va qonun

@@ -47,6 +47,16 @@ export interface ChatImage {
   data: string       // base64 (data: prefiksisiz)
 }
 
+/**
+ * Javob uslubi.
+ *
+ * DIQQAT: rejim faqat USLUBNI o'zgartiradi — faktlar, stavkalar va
+ * ogohlantirishlar ikkalasida bir xil. Soddalashtirilgan javobda
+ * ogohlantirish tushib qolmasligi backendda test bilan qo'riqlanadi
+ * (TestBothModesKeepWarnings).
+ */
+export type ChatMode = 'deklarant' | 'tadbirkor'
+
 export interface ChatMessage {
   role: 'user' | 'assistant'
   content: string
@@ -81,8 +91,8 @@ export const api = {
     post<HSSearchResponse>('/api/hscode/search', { query, use_ai: useAI }),
   calculateDuty: (req: DutyRequest) =>
     post<DutyResult>('/api/duty/calculate', req),
-  chat: (messages: ChatMessage[]) =>
-    post<{ reply: string }>('/api/chat', { messages }),
+  chat: (messages: ChatMessage[], mode: ChatMode = 'deklarant') =>
+    post<{ reply: string }>('/api/chat', { messages, mode }),
   chatStream,
 }
 
@@ -103,11 +113,12 @@ async function chatStream(
   messages: ChatMessage[],
   onChunk: (text: string) => void,
   signal?: AbortSignal,
+  mode: ChatMode = 'deklarant',
 ): Promise<void> {
   const res = await fetch('/api/chat/stream', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ messages }),
+    body: JSON.stringify({ messages, mode }),
     signal,
   })
 

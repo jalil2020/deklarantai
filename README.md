@@ -249,6 +249,36 @@ lekin natijada bu ochiq yoziladi. Qonun bo'yicha noma'lum kelib chiqishga
 ×2 qo'llanadi, ammo API chaqiruvchisi shunchaki maydonni to'ldirmagan
 bo'lishi mumkin — jim ravishda bojni ikkilantirish noto'g'ri javob bo'lardi.
 
+## Ikki rejim: deklarant / tadbirkor
+
+Chatda ikkita javob uslubi bor. So'rovga `mode` maydoni qo'shiladi
+(`"deklarant"` — sukut, yoki `"tadbirkor"`).
+
+| | Deklarant | Tadbirkor |
+|---|---|---|
+| Foydalanuvchi | TIF TN va GTD ni biladi | Atamalarni bilmaydi |
+| Javob | Qisqa, jadval, GTD kodlari (10, 20, 29, 79) | Jami summa oldinda, tushuntirish bilan |
+| Atamalar | Tushuntirilmaydi | Darrov ochib beriladi ("ST-1 — kelib chiqish sertifikati") |
+| Ma'lumot yetishmasa | Variantlar beriladi | Oddiy tilda so'raladi |
+| Oxirida | — | "Keyingi qadamlar" ro'yxati |
+
+⚠️ **Eng muhim qoida: rejim faqat USLUBNI o'zgartiradi.** Faktlar,
+stavkalar va ogohlantirishlar ikkalasida **bir xil**.
+
+Bu shunchaki kelishuv emas, tuzilma bilan ta'minlangan: prompt ikki
+qismdan iborat — `promptIntro[mode]` (uslub) va `sharedRules` (faktlar va
+ogohlantirishlar). Ikkinchisi **bitta konstanta**, ikkala rejim uchun
+umumiy. `TestSharedRulesIdentical` uning bayt-bayt bir xil ekanini
+tekshiradi, `TestBothModesKeepWarnings` esa har bir ogohlantirish
+(aksiz 289¹, ST-1, imtiyoz shartliligi, kursni taxmin qilmaslik,
+utilizatsiya yig'imi) ikkala rejimda borligini qo'riqlaydi.
+
+**Nega bunday qattiq:** bu loyihada tuzatilgan xatolarning aksariyati bir
+turdan edi — xavfli narsani jim tushirib qoldirish (`excise: 0`, imtiyoz
+e'tiborsiz, kelib chiqish hisobga olinmagan, kurs taxmin qilingan).
+"Soddalashtirilgan rejim" aynan o'sha xatoning qaytish yo'li: soddalashtirganda
+birinchi navbatda ogohlantirishlar qisqaradi.
+
 ## Utilizatsiya yig'imi (79)
 
 Huquqiy asos: **ПКМ № 347** (02.06.2020), 1-ilova. Joriy tahrir —
@@ -419,7 +449,7 @@ yo'naltiriladi (Vite proxy).
 | POST  | `/api/hscode/search`    | `{query, use_ai}` → mos kodlar      |
 | POST  | `/api/duty/calculate`   | `{customs_value, import_duty, excise, vat, quantity}` → hisob-kitob |
 | POST  | `/api/utilfee/calculate` | `{code, measure, age_years, weight_kg}` → utilizatsiya yig'imi (79) |
-| POST  | `/api/chat`             | `{messages: [{role, content, images?}]}` → AI javobi (rasm: `images:[{media_type, data(base64)}]`) |
+| POST  | `/api/chat`             | `{messages, mode?}` → AI javobi (rasm: `images:[{media_type, data(base64)}]`) |
 | POST  | `/api/chat/stream`      | Xuddi shu, lekin javob **oqim** (SSE) bo'lib keladi |
 
 ### Oqim (SSE)

@@ -633,3 +633,49 @@ func TestUtilFeeUnknownCodeEndpoint(t *testing.T) {
 		t.Errorf("xato huquqiy asosni ko'rsatmaydi: %q", msg)
 	}
 }
+
+// ------------------------------------------------------------------ rejim
+
+// Rejim so'rovdan olinib, tizim ko'rsatmasiga ta'sir qilishi kerak.
+func TestChatMode(t *testing.T) {
+	var gotSystem string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			System []struct {
+				Text string `json:"text"`
+			} `json:"system"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		if len(req.System) > 0 {
+			gotSystem = req.System[0].Text
+		}
+		_, _ = w.Write([]byte(`{"content":[{"type":"text","text":"javob"}]}`))
+	}))
+	defer srv.Close()
+
+	cases := map[string]string{
+		"tadbirkor": "TADBIRKOR",
+		"deklarant": "TAJRIBALI DEKLARANT",
+		"":          "TAJRIBALI DEKLARANT", // sukut
+	}
+	for mode, want := range cases {
+		h := newServer(t, "kalit", srv.URL)
+		body := `{"messages":[{"role":"user","content":"traktor"}]`
+		if mode != "" {
+			body += `,"mode":"` + mode + `"`
+		}
+		body += `}`
+
+		w, _ := do(t, h, http.MethodPost, "/api/chat", body)
+		wantStatus(t, w, http.StatusOK, "rejim="+mode)
+		if !strings.Contains(gotSystem, want) {
+			t.Errorf("rejim %q: ko'rsatmada %q yo'q", mode, want)
+		}
+		// Ogohlantirishlar rejimdan qat'i nazar qolishi shart.
+		for _, must := range []string{"289¹", "ST-1", "TAXMIN QILMA"} {
+			if !strings.Contains(gotSystem, must) {
+				t.Errorf("rejim %q: %q ogohlantirishi yo'qoldi", mode, must)
+			}
+		}
+	}
+}

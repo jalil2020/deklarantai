@@ -305,3 +305,33 @@
 
 .round-btn.stop { background: var(--danger); color: #fff; }
 .round-btn.stop:hover { opacity: 0.9; }
+
+/* ---------------------------------------------------------- rejim tanlovi */
+/* Deklarant / Tadbirkor. Faqat javob uslubini o'zgartiradi. */
+.mode-switch {
+  display: inline-flex;
+  flex: 0 0 auto;
+  background: rgba(127, 127, 127, 0.1);
+  border-radius: 999px;
+  padding: 2px;
+  gap: 2px;
+}
+.mode-btn {
+  border: none;
+  background: transparent;
+  color: var(--ink-soft);
+  font: inherit;
+  font-size: 0.78rem;
+  padding: 0.3rem 0.7rem;
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
+}
+.mode-btn:hover { color: var(--ink); }
+.mode-btn.on {
+  background: var(--card);
+  color: var(--ink);
+  font-weight: 600;
+  box-shadow: var(--shadow-sm);
+}

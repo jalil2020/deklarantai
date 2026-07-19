@@ -211,6 +211,9 @@ func (s *Server) handleUtilFee(w http.ResponseWriter, r *http.Request) {
 
 type chatRequest struct {
 	Messages []llm.Message `json:"messages"`
+	// Mode — "deklarant" (sukut) yoki "tadbirkor". Faqat javob USLUBINI
+	// o'zgartiradi: faktlar va ogohlantirishlar ikkalasida bir xil.
+	Mode string `json:"mode,omitempty"`
 }
 
 func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
@@ -232,7 +235,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
 	defer cancel()
 
-	reply, err := s.chat.Reply(ctx, req.Messages)
+	reply, err := s.chat.Reply(ctx, chat.ParseMode(req.Mode), req.Messages)
 	if err != nil {
 		writeErr(w, http.StatusBadGateway, "AI javob bermadi: "+err.Error())
 		return
@@ -337,7 +340,7 @@ func (s *Server) handleChatStream(w http.ResponseWriter, r *http.Request) {
 		return nil
 	}
 
-	err := s.chat.ReplyStream(ctx, req.Messages, func(chunk string) error {
+	err := s.chat.ReplyStream(ctx, chat.ParseMode(req.Mode), req.Messages, func(chunk string) error {
 		return send(map[string]string{"text": chunk})
 	})
 	if err != nil {

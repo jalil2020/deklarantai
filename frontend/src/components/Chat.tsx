@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { api, type ChatMessage, type ChatImage } from '../api'
+import { api, type ChatMessage, type ChatImage, type ChatMode } from '../api'
 import Markdown from './Markdown'
 
 interface Props {
@@ -160,6 +160,16 @@ export default function Chat({ aiAvailable }: Props) {
   const [listening, setListening] = useState(false)
   // Ketayotgan oqimni to'xtatish uchun.
   const abortRef = useRef<AbortController | null>(null)
+
+  // Javob uslubi. Tanlov saqlanadi — foydalanuvchi har safar qayta
+  // tanlashi shart emas. Rejim faqat uslubni o'zgartiradi: stavkalar va
+  // ogohlantirishlar ikkalasida bir xil.
+  const [mode, setMode] = useState<ChatMode>(
+    () => (localStorage.getItem('mode') as ChatMode) || 'deklarant',
+  )
+  useEffect(() => {
+    localStorage.setItem('mode', mode)
+  }, [mode])
   const endRef = useRef<HTMLDivElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const taRef = useRef<HTMLTextAreaElement>(null)
@@ -223,7 +233,7 @@ export default function Chat({ aiAvailable }: Props) {
           queued = true
           requestAnimationFrame(flush)
         }
-      }, ctrl.signal)
+      }, ctrl.signal, mode)
       flush()
     } catch (err) {
       if (ctrl.signal.aborted) {
@@ -347,7 +357,25 @@ export default function Chat({ aiAvailable }: Props) {
               ? <>✨ Kod, boj va qonunchilik bo'yicha yordam beraman</>
               : <>⚠️ AI o'chirilgan — <code>ANTHROPIC_API_KEY</code> ni sozlang</>}
           </span>
-          <a className="banner-btn" href="https://customs.uz" target="_blank" rel="noreferrer">customs.uz →</a>
+          {/* Rejim tanlovi. Faqat javob uslubini o'zgartiradi —
+              stavkalar va ogohlantirishlar ikkalasida bir xil. */}
+          <div className="mode-switch" role="group" aria-label="Javob uslubi">
+            {([
+              ['deklarant', 'Deklarant', 'Qisqa, GTD kodlari bilan'],
+              ['tadbirkor', 'Tadbirkor', 'Tushuntirish bilan, oddiy tilda'],
+            ] as const).map(([id, label, hint]) => (
+              <button
+                key={id}
+                type="button"
+                className={`mode-btn ${mode === id ? 'on' : ''}`}
+                aria-pressed={mode === id}
+                title={hint}
+                onClick={() => setMode(id)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
 
         {error && <div className="composer-error">{error}</div>}

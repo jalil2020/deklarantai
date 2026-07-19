@@ -121,7 +121,7 @@ func TestWithRetrievalNoMatches(t *testing.T) {
 // Yig'im shkalasi promptga duty paketidan qo'shiladi. Busiz model
 // yig'imni hisoblab bermay, "alohida belgilanadi" deb qoldirardi.
 func TestSystemPromptHasFeeScale(t *testing.T) {
-	got := newService(t).systemPrompt()
+	got := newService(t).systemPrompt(ModeDeclarant)
 	for _, want := range []string{
 		"BOJXONA YIG'IMI SHKALASI",
 		"BRV: 412 000 so'm",
@@ -138,7 +138,7 @@ func TestSystemPromptHasFeeScale(t *testing.T) {
 // Baza mavjud bo'lmasa ham prompt ishlashi kerak.
 func TestSystemPromptWithoutStores(t *testing.T) {
 	s := New(llm.New(), nil, nil, nil, nil)
-	if got := s.systemPrompt(); !strings.Contains(got, "Deklarant AI") {
+	if got := s.systemPrompt(ModeDeclarant); !strings.Contains(got, "Deklarant AI") {
 		t.Error("bazasiz prompt asosiy ko'rsatmani yo'qotdi")
 	}
 }
@@ -275,7 +275,7 @@ func TestReplySendsPromptAndReturnsText(t *testing.T) {
 	t.Setenv("ANTHROPIC_API_URL", srv.URL)
 	s := newService(t)
 
-	got, err := s.Reply(context.Background(), userMsg("traktor import qilsam qancha boj"))
+	got, err := s.Reply(context.Background(), ModeDeclarant, userMsg("traktor import qilsam qancha boj"))
 	if err != nil {
 		t.Fatalf("Reply xatosi: %v", err)
 	}
@@ -310,7 +310,7 @@ func TestReplyPropagatesAPIError(t *testing.T) {
 	t.Setenv("ANTHROPIC_API_KEY", "test-kalit")
 	t.Setenv("ANTHROPIC_API_URL", srv.URL)
 
-	_, err := newService(t).Reply(context.Background(), userMsg("traktor"))
+	_, err := newService(t).Reply(context.Background(), ModeDeclarant, userMsg("traktor"))
 	if err == nil {
 		t.Fatal("xato kutilgan edi, nil qaytdi")
 	}
@@ -322,7 +322,7 @@ func TestReplyPropagatesAPIError(t *testing.T) {
 // Kalit yo'q bo'lsa — aniq xato, panika emas.
 func TestReplyWithoutAPIKey(t *testing.T) {
 	t.Setenv("ANTHROPIC_API_KEY", "")
-	if _, err := newService(t).Reply(context.Background(), userMsg("traktor")); err == nil {
+	if _, err := newService(t).Reply(context.Background(), ModeDeclarant, userMsg("traktor")); err == nil {
 		t.Error("kalitsiz xato kutilgan edi")
 	}
 }
@@ -452,5 +452,106 @@ func TestRetrievalIncludesRates(t *testing.T) {
 		context.Background(), userMsg("traktor import qilsam qancha boj"))
 	if !strings.Contains(msgs[len(msgs)-1].Content, "<VALYUTA_KURSI>") {
 		t.Error("kurs bloki kontekstga qo'shilmadi")
+	}
+}
+
+// -------------------------------------------------------------- rejimlar
+
+// ENG MUHIM TEST: soddalashtirilgan rejimda ogohlantirish TUSHIB
+// QOLMASLIGI kerak.
+//
+// Bu loyihada tuzatilgan xatolarning aksariyati bir turdan edi — xavfli
+// narsani jim tushirib qoldirish (aksiz "0%", imtiyoz e'tiborsiz, kelib
+// chiqish hisobga olinmagan, kurs taxmin qilingan). "Tadbirkor rejimi"
+// aynan o'sha xatoning qaytish yo'li: soddalashtirganda birinchi navbatda
+// ogohlantirishlar qisqaradi.
+//
+// Shuning uchun ikkala promptda ham bir xil bo'lishi SHART.
+func TestBothModesKeepWarnings(t *testing.T) {
+	s := newService(t)
+	mustHave := []string{
+		// Aksiz — "yo'q" deb aytish taqiqlangan
+		"289¹", "aksiz yo'q",
+		// Kelib chiqish davlati
+		"300-modda", "ST-1",
+		// Imtiyozlar shartli
+		"IMTIYOZ", "SHARTLI",
+		// Kursni taxmin qilmaslik
+		"TAXMIN QILMA",
+		// Hujjat bo'limi bo'sh bo'lsa "kerak emas" degani emas
+		"DEGANI EMAS",
+		// Utilizatsiya yig'imi
+		"UTILIZATSIYA", "ПКМ 347",
+		// Manbani to'qib chiqarmaslik
+		"to'qib",
+	}
+	for _, mode := range []Mode{ModeDeclarant, ModeBusiness} {
+		got := s.systemPrompt(mode)
+		for _, want := range mustHave {
+			if !strings.Contains(got, want) {
+				t.Errorf("%s rejimida %q ogohlantirishi yo'q", mode, want)
+			}
+		}
+	}
+}
+
+// Rejimlar uslubi haqiqatan farq qilishi kerak.
+func TestModesDifferInStyle(t *testing.T) {
+	s := newService(t)
+	dec := s.systemPrompt(ModeDeclarant)
+	biz := s.systemPrompt(ModeBusiness)
+
+	if dec == biz {
+		t.Fatal("ikkala rejim bir xil prompt berdi")
+	}
+	// Deklarant: GTD kodlari bilan ishlaydi.
+	if !strings.Contains(dec, "TAJRIBALI DEKLARANT") {
+		t.Error("deklarant rejimida auditoriya ko'rsatilmagan")
+	}
+	// Tadbirkor: atama tushuntiriladi, jami summa oldinda.
+	for _, want := range []string{"TADBIRKOR", "JAMI SUMMA", "Keyingi qadamlar"} {
+		if !strings.Contains(biz, want) {
+			t.Errorf("tadbirkor rejimida %q yo'q", want)
+		}
+	}
+	// Tadbirkorga GTD kodlarini ko'rsatmaslik aytilgan bo'lishi kerak.
+	if !strings.Contains(biz, "ko'rsatma") {
+		t.Error("tadbirkor rejimida GTD kodlari haqidagi ko'rsatma yo'q")
+	}
+}
+
+// Noma'lum yoki bo'sh rejim — deklarant (asosiy auditoriya).
+func TestParseMode(t *testing.T) {
+	cases := map[string]Mode{
+		"deklarant": ModeDeclarant,
+		"tadbirkor": ModeBusiness,
+		"TADBIRKOR": ModeBusiness,
+		" tadbirkor ": ModeBusiness,
+		"":           ModeDeclarant,
+		"broker":     ModeDeclarant,
+	}
+	for in, want := range cases {
+		if got := ParseMode(in); got != want {
+			t.Errorf("ParseMode(%q) = %q; %q kutilgan", in, got, want)
+		}
+	}
+}
+
+// Faktlar bloki ikkala rejimda AYNAN bir xil bo'lishi kerak —
+// nusxa emas, bitta manba.
+func TestSharedRulesIdentical(t *testing.T) {
+	s := newService(t)
+	dec := s.systemPrompt(ModeDeclarant)
+	biz := s.systemPrompt(ModeBusiness)
+
+	// sharedRules "BOJXONA TO'LOVLARI" dan boshlanadi.
+	const marker = "BOJXONA TO'LOVLARI"
+	di, bi := strings.Index(dec, marker), strings.Index(biz, marker)
+	if di < 0 || bi < 0 {
+		t.Fatal("umumiy blok topilmadi")
+	}
+	if dec[di:] != biz[bi:] {
+		t.Error("umumiy faktlar bloki rejimlar orasida FARQ QILADI — " +
+			"ogohlantirishlar ajralib ketishi mumkin")
 	}
 }
