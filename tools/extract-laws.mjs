@@ -48,6 +48,16 @@ const CORE = [
 // Faqat tegishli parchalari olinadigan hujjatlar.
 const PARTIAL = [/Налоговый кодекс/i, /административной ответственности/i, /Уголовный кодекс/i]
 
+// TOPIC ga tushib qolgan, lekin deklarantga keraksiz hujjatlar.
+//
+// Kalit so'z hujjat NOMIDA uchraydi, ammo hujjat bojxona MUOMALASI haqida
+// emas — bojxona ORGANINING ichki-tashkiliy ishi haqida. Eng yirigi:
+// "Bojxona instituti bakalavriatiga qabul qilish tartibi" — nomida
+// "божхона" bor, mazmuni esa o'qishga kirish kvotalari (35 parcha,
+// korpusning 3%i). Bunday matn RAG ni chalg'itadi: "bojxona ... foiz"
+// so'rovi qabul kvotasi moddasini tortib kelishi mumkin.
+const EXCLUDE = [/приема на учебу/i, /бакалавриат/i]
+
 // ---------------------------------------------------------------- yordamchilar
 
 const unzip = (blob) => {
@@ -126,7 +136,7 @@ const rows = db.prepare(`
   FROM laws WHERE length(doc_text) > 500`).all()
 
 const chunks = []
-const stats = { core: 0, partial: 0, keyword: 0, skipped: 0, expired: 0, uz: 0, ru: 0 }
+const stats = { core: 0, partial: 0, keyword: 0, skipped: 0, expired: 0, offtopic: 0, uz: 0, ru: 0 }
 const coreHits = new Map(CORE.map((re) => [String(re), 0]))
 const NOW = new Date()
 
@@ -146,6 +156,12 @@ for (const r of rows) {
   const isPartial = PARTIAL.some((re) => re.test(name))
   const isKeyword = TOPIC.test(name)
   if (!isCore && !isPartial && !isKeyword) { stats.skipped++; continue }
+  // Faqat kalit so'z bilan tushganlarni filtrlaymiz — CORE/PARTIAL ataylab
+  // tanlangani uchun ularga tegmaymiz.
+  if (!isCore && !isPartial && EXCLUDE.some((re) => re.test(name))) {
+    stats.offtopic++
+    continue
+  }
 
   // O'zbekchasi bo'lsa — o'shani olamiz (rasmiy matn), aks holda ruscha.
   const uzHtml = unzip(r.doc_text_uzb)
@@ -184,6 +200,7 @@ const withLex = chunks.filter((c) => c.lex).length
 
 console.log(`Hujjatlar : core ${stats.core}, qisman ${stats.partial}, kalit so'z ${stats.keyword}`)
 console.log(`            (mavzuga kirmagan: ${stats.skipped}, BEKOR QILINGAN: ${stats.expired},`)
+console.log(`             kalit so'z aldagan (EXCLUDE): ${stats.offtopic},`)
 console.log(`             o'zbekcha ${stats.uz} / ruscha ${stats.ru})`)
 
 // CORE naqshlari jim qolib ketmasligi kerak — mos kelmasa ogohlantiramiz.

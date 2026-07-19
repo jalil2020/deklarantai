@@ -68,7 +68,7 @@ tizim konventsiyasi (Bryussel, 14.06.1983).
 
 ## Qonun korpusi (RAG)
 
-`backend/data/laws.json` — **1 129 parcha, 107 hujjatdan** (4,2 MB). Generatsiya:
+`backend/data/laws.json` — **1 045 parcha, 89 hujjatdan** (3,9 MB). Generatsiya:
 
 ```bash
 node tools/extract-laws.mjs [--dry]
@@ -79,8 +79,14 @@ To'liq korpus ~590 MB, shuning uchun tanlab olinadi:
 | Nima | Qanday |
 |------|--------|
 | Bojxona kodeksi, ПКМ 55 (yig'im), ПКМ 347/358 (utilizatsiya) | **to'liq** |
-| Soliq, Ma'muriy, Jinoyat kodekslari + 83 ta hujjat | faqat **bojxonaga oid moddalar** |
+| Soliq, Ma'muriy, Jinoyat kodekslari + 82 ta hujjat | faqat **bojxonaga oid moddalar** |
 | **Bekor qilingan hujjatlar** (`DateFinish` o'tgan) | **chiqariladi** — 388 ta |
+| Kalit so'z aldagan hujjatlar (`EXCLUDE`) | **chiqariladi** — 1 ta |
+
+`EXCLUDE` nima uchun kerak: nomida "божхона" bo'lgani uchun korpusga
+"Bojxona instituti bakalavriatiga qabul qilish tartibi" tushib qolgan edi —
+35 parcha, korpusning 3%i. Mazmuni o'qishga kirish kvotalari haqida, deklarantga
+foydasi yo'q, ustiga "bojxona ... foiz" kabi so'rovlarni chalg'itardi.
 
 > ⚠️ TIF TN ni tasdiqlagan **ПКМ 181** va o'tish jadvali **ПКМ 349** matnlari
 > manba bazada yo'q (`IsLoad=0`), shuning uchun korpusga kirmagan.
@@ -97,8 +103,21 @@ Har bir parchaga imkon qadar **lex.uz havolasi** biriktiriladi, shunda AI javobd
 rasmiy manbani ko'rsatadi va foydalanuvchi o'zi tekshira oladi. Moslik
 `tools/lex-links.mjs` da **qo'lda** yuritiladi — manba bazasida lex.uz
 identifikatorlari yo'q (Bojxona kodeksi: bazada `39534`, lex.uz da `2876352`).
-Hozirgi qamrov — **65%**; ekstraktor havolasiz eng ko'p uchraydigan hujjatlarni
-ko'rsatib turadi, jadvalni shular bo'yicha kengaytirish mumkin.
+Hozirgi qamrov — **78%** (815/1 045 parcha, 15 ta hujjat).
+
+Nega qo'lda: lex.uz da ochiq API ham, `sitemap.xml` ham yo'q, qidiruvi esa
+faqat JavaScriptda ishlaydi (`?query=` parametri e'tiborga olinmaydi),
+`robots.txt` 20 soniyalik kechikish so'raydi. Shuning uchun har bir hujjat
+alohida qidirib topiladi. Ekstraktor havolasiz eng ko'p uchraydiganlarini
+ko'rsatib turadi — jadvalni shular bo'yicha kengaytirish mumkin.
+
+⚠️ Moslashtirishda nom bilan birga **sana** ham tekshiriladi. Sababi: bir xil
+nomli, turli yildagi hujjatlar bor va eskisi bekor qilingan bo'lishi mumkin —
+masalan "О порядке применения акцизных марок…" 1999 (kuchini yo'qotgan) va
+2024 (amaldagi). Faqat nom bo'yicha mos qo'ysak, amaldagi hujjatga bekor
+qilinganining havolasi biriktirilib qolardi. Hozircha 2024 yilgisiga havola
+topilmadi, shuning uchun u **havolasiz** qoldirilgan — noto'g'ri havoladan
+ko'ra havolasiz yaxshiroq.
 
 Chat har bir savolga bazadan **top-8 TIF TN kod** va **top-3 qonun parchasi**
 topib qo'shadi — butun baza promptga tashlanmaydi, shu sababli prompt keshi

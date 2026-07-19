@@ -14,6 +14,12 @@
 // javobgarlik kodeksi: bazada 01.04.1995, lex.uz da 22.09.1994 — biri kuchga
 // kirish, ikkinchisi qabul qilish sanasi).
 //
+// Qolganlarida esa nom bilan BIRGA sana ham talab qilinadi. Sabab: bir xil
+// nomli, turli yildagi hujjatlar bor va eskisi bekor qilingan bo'lishi mumkin.
+// Masalan "О порядке применения акцизных марок…" — 1999 (kuchini yo'qotgan)
+// va 2024 (amaldagi). Faqat nom bo'yicha mos qo'ysak, amaldagi hujjatga
+// bekor qilinganining havolasi biriktirilib qolardi.
+//
 // TEKSHIRILGAN: 2026-07 da lex.uz qidiruvi orqali, har biri nomi bo'yicha
 // solishtirib. Havola buzilsa — lex.uz da hujjat raqami va sanasi bo'yicha
 // qayta topish kerak.
@@ -33,12 +39,44 @@ export const LEX_LINKS = [
   // GTD to'ldirish tartibi (МЮ 2773) — deklarantlar uchun eng ko'p kerak bo'ladigan.
   { name: /Инструкции о порядке заполнения грузовой таможенной декларации/i,
     url: 'https://lex.uz/docs/2924953' },
+
+  // --- Deklaratsiya va rasmiylashtiruv tartibi ---
+  // ДТС (bojxona qiymati deklaratsiyasi) to'ldirish — МЮ 2868.
+  { name: /заполнения декларации таможенной стоимости/i, date: '14.03.2017',
+    url: 'https://lex.uz/docs/3133239' },
+  // Dastlabki, davriy va to'liqsiz YuBD — МЮ 3296.
+  { name: /первичных, периодических и неполных таможенных грузовых деклараций/i,
+    date: '04.05.2021', url: 'https://lex.uz/docs/5408763' },
+
+  // --- Bojxona ma'muriyatchiligi ---
+  { name: /О дополнительных мерах по организации деятельности органов государственной таможенной службы/i,
+    date: '25.03.2025', url: 'https://lex.uz/docs/7452091' },  // ПП-122
+  { name: /О дальнейшем совершенствовании некоторых процедур в таможенной сфере/i,
+    date: '06.11.2025', url: 'https://lex.uz/docs/7830538' },  // ПКМ 700
+  { name: /упрощению и повышению эффективности таможенного администрирования/i,
+    date: '17.12.2025', url: 'https://lex.uz/docs/7934918' },  // УП-250
+  { name: /грузовых операций в отношении товаров, находящихся под таможенным контролем/i,
+    date: '20.08.2021', url: 'https://lex.uz/docs/5592823' },  // ПКМ 531
+
+  // --- Imtiyozlar va taqiqlar ---
+  { name: /льгот по таможенной пошлине и налогу на добавленную стоимость/i,
+    date: '27.11.2020', url: 'https://lex.uz/docs/5131865' },  // ПКМ 750
+  { name: /озоноразрушающих веществ/i, date: '09.01.2018',
+    url: 'https://lex.uz/docs/3500042' },                      // ПКМ 17
 ]
 
-/** Hujjatga mos lex.uz havolasini qaytaradi (topilmasa null). */
+/**
+ * Hujjatga mos lex.uz havolasini qaytaradi (topilmasa null).
+ *
+ * `date` yozuvda ko'rsatilgan bo'lsa — nom bilan birga u ham mos kelishi shart.
+ * Ko'rsatilmagan bo'lsa (kodekslar) faqat nom bo'yicha tekshiriladi.
+ */
 export function lexLink({ name, docId, date }) {
   for (const l of LEX_LINKS) {
-    if (l.name && l.name.test(name || '')) return l.url
+    if (l.name) {
+      if (l.name.test(name || '') && (!l.date || l.date === date)) return l.url
+      continue
+    }
     if (l.docId && String(docId) === l.docId && l.date === date) return l.url
   }
   return null
