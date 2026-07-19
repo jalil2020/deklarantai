@@ -32,11 +32,13 @@ Deklarant AI/
 │   ├── data/hscodes.json     # TIF TN bazasi (13 142 kod)
 │   ├── data/laws.json        # qonun korpusi (1 111 parcha)
 │   ├── data/docs.json        # hujjat talablari (15 112 qoida)
+│   ├── data/countries.json   # davlatlar va boj rejimi (254 ta)
 │   └── internal/
 │       ├── api/              # HTTP handlerlar + CORS
 │       ├── hscode/           # kod qidiruv
 │       ├── duty/             # boj hisoblash
 │       ├── docs/             # hujjat talablari (kod oralig'i bo'yicha)
+│       ├── countries/        # kelib chiqish davlati -> boj koeffitsienti
 │       ├── laws/             # qonun korpusi qidiruvi
 │       ├── chat/             # RAG + suhbat
 │       └── llm/              # Claude API klienti
@@ -200,6 +202,51 @@ va kalkulyator ishlaydi, faqat chat o'chiq bo'ladi.
 | `ANTHROPIC_API_URL` | yo'q | Korporativ shlyuz yoki testdagi soxta server |
 | `PORT` | yo'q | Sukut bo'yicha `8080` |
 | `HSCODE_DATA`, `LAWS_DATA`, `DOCS_DATA` | yo'q | Ma'lumot fayllari yo'li |
+
+## Kelib chiqish davlati va boj
+
+`backend/data/countries.json` — **254 davlat**. Generatsiya:
+
+```bash
+node tools/extract-countries.mjs
+```
+
+**Boj faqat tovar kodiga emas, kelib chiqish davlatiga ham bog'liq** —
+Bojxona kodeksi 300-modda:
+
+| Rejim | Koeffitsient | Davlatlar | Qonun matni |
+|---|---|---|---|
+| Erkin savdo | **×0** | 10 ta (MDH) | "bojxona bojlari qoʻllanilmaydi" |
+| Eng qulaylik | **×1** | 49 ta | "boj tarifi bilan belgilangan stavkalar" |
+| Rejim yo'q yoki kelib chiqishi **aniqlanmagan** | **×2** | 195 ta | "stavkalari ikki baravar oshiriladi" |
+
+Erkin savdo ro'yxati: Rossiya, Qozog'iston, Belarus, Qirg'iziston,
+Tojikiston, Ozarbayjon, Armaniston, Gruziya, Moldova, Ukraina.
+
+⚠️ **Erkin savdo imtiyozi avtomatik emas.** BK 300-moddasiga ko'ra tovar
+shartnoma ishtirokchisi davlat rezidenti tomonidan eksport qilingan va
+bevosita olib kirilgan bo'lishi, hamda **ST-1 sertifikati** taqdim
+etilishi shart. Chat buni har javobda eslatadi.
+
+API da davlat nomini yozish yetarli — koeffitsient server tomonida
+aniqlanadi:
+
+```bash
+curl -X POST http://localhost:8080/api/duty/calculate \
+  -d '{"customs_value":100000000,"usd_rate":12000,"import_duty":10,
+       "vat":12,"origin_country":"Rossiya"}'
+```
+
+Nom, kod (`643`), ISO (`RU`), ruscha nom (`РОССИЯ`) va sinonim (`XXR`,
+`Amerika Qo'shma Shtatlari`) — hammasi ishlaydi. Bazadagi nomlar ruscha
+bo'lgani uchun asosiy savdo sheriklariga o'zbekcha nom qo'lda yozilgan:
+transliteratsiya "КИТАЙ" → "KITAY" berardi, foydalanuvchi esa "Xitoy" deb
+yozadi.
+
+⚠️ Kelib chiqish **ko'rsatilmasa** ×1 olinadi (eng ko'p uchraydigan holat),
+lekin natijada bu ochiq yoziladi. Qonun bo'yicha noma'lum kelib chiqishga
+×2 qo'llanadi, ammo API chaqiruvchisi shunchaki maydonni to'ldirmagan
+bo'lishi mumkin — jim ravishda bojni ikkilantirish noto'g'ri javob bo'lardi.
 
 ## Xarajat nazorati
 

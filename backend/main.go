@@ -8,6 +8,7 @@ import (
 
 	"deklarant-ai/backend/internal/api"
 	"deklarant-ai/backend/internal/chat"
+	"deklarant-ai/backend/internal/countries"
 	"deklarant-ai/backend/internal/docs"
 	"deklarant-ai/backend/internal/hscode"
 	"deklarant-ai/backend/internal/laws"
@@ -18,6 +19,7 @@ func main() {
 	dataPath := getenv("HSCODE_DATA", "data/hscodes.json")
 	lawsPath := getenv("LAWS_DATA", "data/laws.json")
 	docsPath := getenv("DOCS_DATA", "data/docs.json")
+	countriesPath := getenv("COUNTRIES_DATA", "data/countries.json")
 	addr := ":" + getenv("PORT", "8080")
 
 	codes, err := hscode.Load(dataPath)
@@ -57,6 +59,15 @@ func main() {
 			u.Model, u.InputTokens, u.OutputTokens, u.CacheWrite, u.CacheRead)
 	}
 
+	// Davlatlar ma'lumotnomasi — boj kelib chiqishga bog'liq (BK 300-modda).
+	countryStore, err := countries.Load(countriesPath)
+	if err != nil {
+		log.Printf("Davlatlar ma'lumotnomasi yuklanmadi (%s): %v — boj kelib chiqishsiz hisoblanadi", countriesPath, err)
+		countryStore = nil
+	} else {
+		log.Printf("Davlatlar: %d ta (%d tasi erkin savdo)", countryStore.Len(), len(countryStore.FreeTrade()))
+	}
+
 	llmClient := llm.New()
 	if llmClient.Available() {
 		log.Printf("AI yoqilgan (Claude)")
@@ -65,7 +76,7 @@ func main() {
 	}
 
 	chatSvc := chat.New(llmClient, codes, lawStore, docStore)
-	srv := api.New(codes, lawStore, chatSvc, llmClient)
+	srv := api.New(codes, lawStore, chatSvc, llmClient, countryStore)
 
 	log.Printf("Server ishga tushdi: http://localhost%s", addr)
 	if err := http.ListenAndServe(addr, srv.Routes()); err != nil {

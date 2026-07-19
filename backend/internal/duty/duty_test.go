@@ -200,3 +200,97 @@ func TestReferenceReferenceCase(t *testing.T) {
 	eq(t, find(r, "20").Amount, 0, "boj")
 	eq(t, find(r, "27").Amount, 0, "aksiz")
 }
+
+// Kelib chiqish davlati bojga ta'sir qiladi — Bojxona kodeksi 300-modda:
+//
+//	"Boj tarifi bilan belgilangan stavkalar miqdoridagi bojxona bojlari
+//	 … eng koʻp qulaylik berish rejimini qoʻllayotgan mamlakatlarda ishlab
+//	 chiqarilgan tovarlarga nisbatan … qoʻllaniladi."
+//	"Savdo-iqtisodiy munosabatlarda eng koʻp qulaylik berish rejimi nazarda
+//	 tutilmagan mamlakatlarda ishlab chiqarilgan yoxud ishlab chiqarilgan
+//	 mamlakati aniqlanmagan tovarlarga nisbatan bojxona bojlarining
+//	 stavkalari IKKI BARAVAR oshiriladi."
+//	"…erkin savdo rejimini belgilagan davlatlarda ishlab chiqarilgan …
+//	 tovarlarga … bojxona bojlari qoʻllanilmaydi."
+func TestOriginAffectsDuty(t *testing.T) {
+	mult := func(v float64) *float64 { return &v }
+	base := Request{
+		Date: testDate, CustomsValue: 100_000_000, USDRate: 12_000,
+		ImportDuty: 10, VAT: 12,
+	}
+
+	cases := []struct {
+		name       string
+		multiplier *float64
+		wantRate   float64
+		wantDuty   float64
+	}{
+		{"erkin savdo (Rossiya)", mult(0), 0, 0},
+		{"eng qulaylik (Xitoy)", mult(1), 10, 10_000_000},
+		{"rejim yo'q", mult(2), 20, 20_000_000},
+		{"ko'rsatilmagan", nil, 10, 10_000_000},
+	}
+	for _, c := range cases {
+		r := base
+		r.OriginMultiplier = c.multiplier
+		got := Calculate(r)
+		item := find(got, "20")
+
+		eq(t, item.Rate, c.wantRate, c.name+": stavka")
+		eq(t, item.Amount, c.wantDuty, c.name+": boj")
+		if item.Note == "" {
+			t.Errorf("%s: izoh yo'q — foydalanuvchi nega bunday ekanini bilishi kerak", c.name)
+		}
+	}
+}
+
+// Kelib chiqish ko'rsatilmasa, buni YASHIRMASLIK kerak: javob ikkala
+// tomonga ham xato bo'lishi mumkin (erkin savdoda boj yo'q, rejimsiz
+// davlatda ikki barobar).
+func TestUnspecifiedOriginIsFlagged(t *testing.T) {
+	r := Calculate(Request{
+		Date: testDate, CustomsValue: 100_000_000, USDRate: 12_000,
+		ImportDuty: 10, VAT: 12,
+	})
+	note := find(r, "20").Note
+	if !strings.Contains(note, "ko'rsatilmagan") {
+		t.Errorf("kelib chiqish ko'rsatilmagani aytilmagan: %q", note)
+	}
+	if !strings.Contains(note, "300-modda") {
+		t.Errorf("qonuniy asos ko'rsatilmagan: %q", note)
+	}
+}
+
+// Erkin savdo imtiyozi shartli — sertifikat kerakligi aytilishi shart.
+func TestFreeTradeMentionsCertificate(t *testing.T) {
+	m := 0.0
+	r := Calculate(Request{
+		Date: testDate, CustomsValue: 100_000_000, USDRate: 12_000,
+		ImportDuty: 10, VAT: 12, OriginMultiplier: &m, OriginCountry: "Rossiya",
+	})
+	note := find(r, "20").Note
+	if !strings.Contains(note, "ST-1") {
+		t.Errorf("kelib chiqish sertifikati eslatilmagan: %q", note)
+	}
+	if !strings.Contains(note, "Rossiya") {
+		t.Errorf("davlat nomi izohda yo'q: %q", note)
+	}
+}
+
+// Boj o'zgarsa, QQS bazasi ham o'zgarishi kerak — ular bog'liq.
+func TestOriginChangesVATBase(t *testing.T) {
+	mult := func(v float64) *float64 { return &v }
+	base := Request{
+		Date: testDate, CustomsValue: 100_000_000, USDRate: 12_000,
+		ImportDuty: 10, VAT: 12,
+	}
+
+	free, mfn := base, base
+	free.OriginMultiplier = mult(0)
+	mfn.OriginMultiplier = mult(1)
+
+	// Erkin savdo: QQS bazasi = faqat bojxona qiymati.
+	eq(t, find(Calculate(free), "29").Base, 100_000_000, "QQS bazasi (erkin savdo)")
+	// EQR: baza = qiymat + boj.
+	eq(t, find(Calculate(mfn), "29").Base, 110_000_000, "QQS bazasi (EQR)")
+}

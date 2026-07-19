@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"deklarant-ai/backend/internal/chat"
+	"deklarant-ai/backend/internal/countries"
 	"deklarant-ai/backend/internal/docs"
 	"deklarant-ai/backend/internal/hscode"
 	"deklarant-ai/backend/internal/laws"
@@ -33,8 +34,12 @@ func newServer(t *testing.T, apiKey, aiURL string) http.Handler {
 	if err != nil {
 		t.Fatal(err)
 	}
+	countryStore, err := countries.Load("../../data/countries.json")
+	if err != nil {
+		t.Fatal(err)
+	}
 	client := llm.New()
-	return New(codes, lawStore, chat.New(client, codes, lawStore, docStore), client).Routes()
+	return New(codes, lawStore, chat.New(client, codes, lawStore, docStore), client, countryStore).Routes()
 }
 
 // do — so'rov yuboradi va javobni qaytaradi.
@@ -458,5 +463,53 @@ func TestChatStreamBadInput(t *testing.T) {
 		if out["error"] == nil {
 			t.Errorf("%s: xato matni yo'q", name)
 		}
+	}
+}
+
+// Davlat NOMI berilsa, koeffitsient server tomonida aniqlanishi kerak —
+// chaqiruvchi Bojxona kodeksi 300-moddasini bilishi shart emas.
+func TestDutyOriginByCountryName(t *testing.T) {
+	h := newServer(t, "", "")
+	body := func(country string) string {
+		return `{"date":"2026-07-19T00:00:00Z","customs_value":100000000,
+		         "usd_rate":12000,"import_duty":10,"vat":12,"origin_country":"` + country + `"}`
+	}
+
+	cases := []struct {
+		country  string
+		wantDuty float64
+	}{
+		{"Rossiya", 0},        // erkin savdo
+		{"643", 0},            // kod bo'yicha ham
+		{"Xitoy", 10_000_000}, // eng qulaylik rejimi
+		{"AQSh", 10_000_000},  // sinonim orqali
+	}
+	for _, c := range cases {
+		w, out := do(t, h, http.MethodPost, "/api/duty/calculate", body(c.country))
+		wantStatus(t, w, http.StatusOK, c.country)
+
+		items, _ := out["items"].([]any)
+		var duty float64
+		for _, it := range items {
+			m, _ := it.(map[string]any)
+			if m["code"] == "20" {
+				duty, _ = m["amount"].(float64)
+			}
+		}
+		if duty != c.wantDuty {
+			t.Errorf("%s: boj = %.0f; %.0f kutilgan", c.country, duty, c.wantDuty)
+		}
+	}
+}
+
+// Noma'lum davlat jim o'tkazilmasligi kerak — aks holda foydalanuvchi
+// imtiyoz olganini o'ylab, aslida oddiy stavkada hisoblab qolardi.
+func TestDutyUnknownCountry(t *testing.T) {
+	w, out := do(t, newServer(t, "", ""), http.MethodPost, "/api/duty/calculate",
+		`{"customs_value":1000,"usd_rate":12000,"import_duty":10,"vat":12,
+		  "origin_country":"Elfiya podsholigi"}`)
+	wantStatus(t, w, http.StatusBadRequest, "noma'lum davlat")
+	if msg, _ := out["error"].(string); !strings.Contains(msg, "topilmadi") {
+		t.Errorf("xato matni = %q", msg)
 	}
 }

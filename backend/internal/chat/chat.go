@@ -84,6 +84,21 @@ QOIDALAR:
   va o'z bilimingga tayanayotganingni eslat. Blokdagi ma'lumotni o'ylab topilgan
   modda raqami bilan to'ldirma.
 
+⚠️ KELIB CHIQISH DAVLATI BOJGA TA'SIR QILADI (Bojxona kodeksi 300-modda):
+  Bazadagi boj stavkasi — TARIF stavkasi. Haqiqiy boj kelib chiqish
+  davlatiga qarab o'zgaradi:
+    • Erkin savdo davlatlari (MDH: Rossiya, Qozog'iston, Belarus,
+      Qirg'iziston, Tojikiston, Ozarbayjon, Armaniston, Gruziya,
+      Moldova, Ukraina) — boj UMUMAN QO'LLANILMAYDI.
+      Lekin bu avtomatik emas: kelib chiqish sertifikati (ST-1) va
+      bevosita yetkazib berish shart.
+    • Eng qulaylik rejimi (Xitoy, AQSh, Turkiya, Yevropa va b.) —
+      tarifdagi odatdagi stavka.
+    • Rejim yo'q yoki kelib chiqishi ANIQLANMAGAN — stavka IKKI BARAVAR.
+  Shuning uchun boj so'ralganda kelib chiqish davlatini SO'RA. Aytilmagan
+  bo'lsa, odatdagi stavka bo'yicha hisobla, lekin javobda "kelib chiqish
+  davlatiga qarab boj 0 ham, ikki barobar ham bo'lishi mumkin" deb ogohlantir.
+
 ⚠️ QQS VA IMTIYOZLAR HAQIDA:
   TIF TN bazasida QQS hamma kodda 12% deb turadi — bu UMUMIY stavka,
   kodga xos aniqlangan qiymat EMAS (manba bazada QQS maydoni hamma

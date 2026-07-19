@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"deklarant-ai/backend/internal/chat"
+	"deklarant-ai/backend/internal/countries"
 	"deklarant-ai/backend/internal/duty"
 	"deklarant-ai/backend/internal/hscode"
 	"deklarant-ai/backend/internal/laws"
@@ -18,21 +19,23 @@ import (
 
 // Server — barcha bog'liqliklarni ushlab turadi.
 type Server struct {
-	codes   *hscode.Store
-	laws    *laws.Store // nil bo'lishi mumkin
-	chat    *chat.Service
-	llm     *llm.Client
-	limiter *limiter
+	codes     *hscode.Store
+	laws      *laws.Store // nil bo'lishi mumkin
+	chat      *chat.Service
+	llm       *llm.Client
+	countries *countries.Store // nil bo'lishi mumkin
+	limiter   *limiter
 }
 
 // New — server yaratadi.
-func New(codes *hscode.Store, lawStore *laws.Store, chatSvc *chat.Service, llmClient *llm.Client) *Server {
+func New(codes *hscode.Store, lawStore *laws.Store, chatSvc *chat.Service, llmClient *llm.Client, countryStore *countries.Store) *Server {
 	return &Server{
-		codes:   codes,
-		laws:    lawStore,
-		chat:    chatSvc,
-		llm:     llmClient,
-		limiter: newLimiter(),
+		codes:     codes,
+		laws:      lawStore,
+		chat:      chatSvc,
+		llm:       llmClient,
+		countries: countryStore,
+		limiter:   newLimiter(),
 	}
 }
 
@@ -136,6 +139,22 @@ func (s *Server) handleDutyCalc(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "bojxona qiymati manfiy bo'lishi mumkin emas")
 		return
 	}
+
+	// Davlat nomi berilgan bo'lsa, koeffitsientni o'zimiz aniqlaymiz —
+	// chaqiruvchi Bojxona kodeksi 300-moddasini bilishi shart emas.
+	// Koeffitsient ochiq berilgan bo'lsa, unga tegmaymiz.
+	if req.OriginMultiplier == nil && req.OriginCountry != "" && s.countries != nil {
+		c, ok := s.countries.Find(req.OriginCountry)
+		if !ok {
+			writeErr(w, http.StatusBadRequest,
+				"kelib chiqish davlati topilmadi: "+req.OriginCountry)
+			return
+		}
+		m := c.DutyMultiplier
+		req.OriginMultiplier = &m
+		req.OriginCountry = c.NameUZ
+	}
+
 	writeJSON(w, http.StatusOK, duty.Calculate(req))
 }
 

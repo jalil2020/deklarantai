@@ -145,6 +145,23 @@ type Request struct {
 	USDRate float64 `json:"usd_rate,omitempty"`
 
 	// Stavkalar, foizda.
+	// OriginMultiplier — kelib chiqish davlatiga bog'liq boj koeffitsienti
+	// (Bojxona kodeksi 300-modda):
+	//
+	//	0 — erkin savdo davlati (MDH), boj qo'llanilmaydi
+	//	1 — eng qulaylik rejimi, tarifdagi odatdagi stavka
+	//	2 — rejim yo'q yoki kelib chiqishi aniqlanmagan
+	//
+	// Bo'sh (0 emas, balki KO'RSATILMAGAN) bo'lsa 1 deb olinadi va
+	// natijaga izoh qo'shiladi. Sababi: qonun bo'yicha noma'lum kelib
+	// chiqishga ×2 qo'llanadi, lekin API chaqiruvchisi shunchaki maydonni
+	// to'ldirmagan bo'lishi mumkin — jim ravishda bojni ikkilantirish
+	// noto'g'ri javob bo'lardi. Shuning uchun ×1 olinadi, ammo izohda
+	// kelib chiqish ko'rsatilmagani AYTILADI.
+	OriginMultiplier *float64 `json:"origin_multiplier,omitempty"`
+	// OriginCountry — ma'lumot uchun (izohda ko'rsatiladi).
+	OriginCountry string `json:"origin_country,omitempty"`
+
 	ImportDuty float64 `json:"import_duty"`          // 20. Bojxona boji
 	ExtraDuty  float64 `json:"extra_duty,omitempty"` // 21. Qo'shimcha boj
 	Excise     float64 `json:"excise"`               // 27. Aksiz (advalor)
@@ -242,8 +259,14 @@ func Calculate(r Request) Result {
 	}
 
 	// 20. Import boji.
-	importDuty := cv * r.ImportDuty / 100
-	add(LineItem{Code: "20", Name: "Bojxona boji", Rate: r.ImportDuty, Base: cv, Amount: importDuty})
+	// Boj stavkasi KELIB CHIQISH DAVLATIGA bog'liq (BK 300-modda):
+	// erkin savdo → ×0, eng qulaylik rejimi → ×1, rejim yo'q yoki
+	// kelib chiqishi aniqlanmagan → ×2.
+	mult, originNote := originMultiplier(r)
+	rate := r.ImportDuty * mult
+	importDuty := cv * rate / 100
+	add(LineItem{Code: "20", Name: "Bojxona boji", Rate: rate, Base: cv,
+		Amount: importDuty, Note: originNote})
 
 	// 21. Qo'shimcha boj.
 	extraDuty := cv * r.ExtraDuty / 100
@@ -307,4 +330,33 @@ func itoa(v int64) string {
 
 func round(v float64) float64 {
 	return math.Round(v*100) / 100
+}
+
+// originMultiplier — kelib chiqish davlatiga bog'liq boj koeffitsienti
+// va unga tegishli izoh.
+//
+// Ko'rsatilmagan bo'lsa ×1 (eng qulaylik rejimi) olinadi — bu eng ko'p
+// uchraydigan holat. Lekin izohda kelib chiqish so'ralmagani aytiladi:
+// erkin savdo davlatida boj umuman chiqmasligi, rejimsiz davlatda esa
+// ikki barobar bo'lishi mumkin, ya'ni javob ikkala tomonga ham xato
+// bo'lishi mumkin va foydalanuvchi buni bilishi kerak.
+func originMultiplier(r Request) (float64, string) {
+	if r.OriginMultiplier == nil {
+		return 1, "kelib chiqish davlati ko'rsatilmagan — eng qulaylik rejimi (×1) bo'yicha; " +
+			"MDH erkin savdo davlatlarida boj umuman chiqmaydi, rejimsiz davlatda esa ikki barobar (BK 300-modda)"
+	}
+	m := *r.OriginMultiplier
+	country := r.OriginCountry
+	if country == "" {
+		country = "ko'rsatilgan davlat"
+	}
+	switch {
+	case m == 0:
+		return 0, country + " — erkin savdo rejimi, boj qo'llanilmaydi (BK 300-modda). " +
+			"Imtiyoz uchun kelib chiqish sertifikati (ST-1) va bevosita yetkazib berish shart"
+	case m == 2:
+		return 2, country + " bilan eng qulaylik rejimi yo'q — stavka ikki baravar oshirilgan (BK 300-modda)"
+	default:
+		return m, country + " — eng qulaylik rejimi, tarifdagi odatdagi stavka"
+	}
 }
