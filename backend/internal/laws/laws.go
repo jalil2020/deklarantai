@@ -74,7 +74,7 @@ func Load(path string) (*Store, error) {
 	var total float64
 	for i := range f.Chunks {
 		c := &f.Chunks[i]
-		c.search = strings.ToLower(c.Title + "\n" + c.Text)
+		c.search = normalize(c.Title + "\n" + c.Text)
 		total += float64(len(c.search))
 	}
 	avg := 1.0
@@ -96,9 +96,22 @@ type hit struct {
 	conf float64
 }
 
+// normalize — matnni qidiruv uchun bir ko'rinishga keltiradi.
+//
+// O'zbek lotin yozuvida "oʻ"/"gʻ" uchun U+02BB, tutuq uchun U+02BC
+// ishlatiladi; foydalanuvchi esa klaviaturadagi oddiy ' ni bosadi.
+// Normallashtirmasak, "toʻlov" matnini "to'lov" so'rovi topmaydi.
+func normalize(s string) string {
+	return apostrophes.Replace(strings.ToLower(s))
+}
+
+var apostrophes = strings.NewReplacer(
+	"ʻ", "'", "ʼ", "'", "‘", "'", "’", "'", "´", "'", "`", "'",
+)
+
 // Search — so'rovga eng mos parchalarni topadi.
 func (s *Store) Search(query string, limit int) []Match {
-	q := strings.ToLower(strings.TrimSpace(query))
+	q := normalize(strings.TrimSpace(query))
 	if q == "" {
 		return nil
 	}
@@ -221,7 +234,7 @@ const (
 
 func score(c *Chunk, terms []string, hits []hit, idf []float64, avgLen float64) float64 {
 	var sc, matchedIdf, totalIdf float64
-	title := strings.ToLower(c.Title)
+	title := normalize(c.Title)
 	for j := range terms {
 		totalIdf += idf[j]
 	}

@@ -143,7 +143,7 @@ function pathOf(chain, field) {
 // ---------------------------------------------------------------- chiqarish
 
 const codes = []
-const stats = { noUnit: 0, noDuty: 0, noVat: 0, endFlag: 0 }
+const stats = { noUnit: 0, noDuty: 0, noVat: 0, exciseKnown: 0 }
 
 for (const r of rows) {
   const bare = String(r.code || '').replace(/\s/g, '')
@@ -159,7 +159,7 @@ for (const r of rows) {
   if (!unit) stats.noUnit++
   if (!tp) stats.noDuty++
   if (!nds) stats.noVat++
-  if (r.end) stats.endFlag++
+  if (an) stats.exciseKnown++
 
   codes.push({
     code: bare,
@@ -175,7 +175,13 @@ for (const r of rows) {
     unit_ru: unit?.ru ?? null,
     import_duty: tp?.percent ?? 0,
     export_duty: tpEx?.percent ?? 0,
-    excise: an?.percent ?? 0,
+    // Aksiz: manba bazada "an" maydoni bo'sh (joriy TIF TN da hech bir kodda
+    // to'ldirilmagan). Uni 0 deb yozish YOLG'ON bo'lardi — "aksiz yo'q" degan
+    // ma'noni beradi, holbuki aroq, sigaret, benzin aksizli. Shuning uchun
+    // ma'lumot bo'lmasa, maydon UMUMAN yozilmaydi (noma'lum).
+    // Haqiqiy stavkalar Soliq kodeksining 289¹–289³ moddalarida, tovar nomi
+    // bo'yicha — ular qonun korpusida bor.
+    ...(an ? { excise: an.percent } : {}),
     vat: nds?.percent ?? 0,
     duty_law: tp?.law ?? null,
   })
@@ -199,6 +205,13 @@ const out = {
       + 'Rasmiy manba: customs.uz, lex.uz.',
     unit_note: 'TIF TN da asosiy o\'lchov doim kg (netto). "unit" — QO\'SHIMCHA '
       + 'birlik; null bo\'lsa, faqat kg qo\'llaniladi.',
+    excise_note: 'DIQQAT: bu bazada aksiz stavkalari YO\'Q — manba bazaning "an" '
+      + 'maydoni bo\'sh. "excise" maydoni yozilmagan bo\'lsa, bu "aksiz yo\'q" '
+      + 'DEGANI EMAS, balki "bu bazada ma\'lumot yo\'q" degani. Haqiqiy stavkalar '
+      + 'Soliq kodeksining 289¹ (tamaki), 289² (alkogol), 289³ (neft mahsulotlari '
+      + 'va boshqalar) moddalarida, tovar nomi bo\'yicha berilgan — ular qonun '
+      + 'korpusida (laws.json) mavjud.',
+    excise_known_codes: stats.exciseKnown,
   },
   codes,
 }
@@ -222,6 +235,8 @@ console.log(`\n   qo'shimcha o'lchovsiz (faqat kg): ${stats.noUnit}`
   + `   bojsiz: ${stats.noDuty}   QQSsiz: ${stats.noVat}`)
 console.log(`   bir vaqtda >1 stavka bloki amal qilgan holatlar: ${overlapping}`
   + ` (eng kech boshlangani olindi)`)
+console.log(`   aksiz stavkasi ma'lum bo'lgan kodlar: ${stats.exciseKnown} / ${codes.length}`
+  + (stats.exciseKnown === 0 ? "  ← maydon yozilmadi (noma'lum, 0 EMAS)" : ''))
 
 const sample = codes.find((c) => c.code === '8701211019') ?? codes[0]
 console.log('\n   Namuna:')

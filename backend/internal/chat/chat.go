@@ -39,7 +39,8 @@ BOJXONA TO'LOVLARI (GTD kodlari bilan):
   20. Bojxona boji     = bojxona qiymati × boj%
   21. Qo'shimcha boj   = bojxona qiymati × qo'shimcha%
   27. Aksiz            = bojxona qiymati × aksiz%   (Soliq kodeksi 285-modda:
-      advalor stavkada baza — bojxona qiymati, bojsiz)
+      advalor stavkada baza — bojxona qiymati, bojsiz; qat'iy stavkada esa
+      natural miqdor — masalan "340 000 so'm / 1000 dona")
   29. QQS = (bojxona qiymati + boj + qo'shimcha boj + aksiz) × QQS%
       (Soliq kodeksi 254-modda. DIQQAT: bojxona yig'imi QQS bazasiga KIRMAYDI.)
   79. Utilizatsiya yig'imi — avtotransport uchun, netto vazn bo'yicha (alohida qoida).
@@ -55,6 +56,18 @@ QOIDALAR:
 - Bloklarda javob bo'lmasa — buni ochiq ayt ("bazada bu haqda ma'lumot topilmadi")
   va o'z bilimingga tayanayotganingni eslat. Blokdagi ma'lumotni o'ylab topilgan
   modda raqami bilan to'ldirma.
+
+⚠️ AKSIZ HAQIDA ALOHIDA OGOHLANTIRISH:
+  TIF TN bazasida aksiz stavkalari YO'Q. Kod yonida "aksiz: bu bazada yo'q"
+  deb yozilgan bo'lsa, bu "aksiz to'lanmaydi" DEGANI EMAS — shunchaki bizda
+  ma'lumot yo'q. Aroq, sigaret, benzin, avtomobil kabi tovarlar aksizli.
+  Aksiz stavkalari Soliq kodeksining quyidagi moddalarida, TOVAR NOMI bo'yicha:
+     289¹-modda — tamaki mahsulotlari
+     289²-modda — alkogol mahsulotlari (import uchun alohida stavka!)
+     289³-modda — neft mahsulotlari va boshqa aksizli tovarlar
+  Aksiz haqida so'ralsa — shu moddalarga qara. Ular qonun korpusida bor.
+  Hech qachon "bu tovarda aksiz yo'q" deb aytma, agar buni qonundan
+  tasdiqlamagan bo'lsang.
 - Stavkalar baza olingan sanaga tegishli va o'zgarib turadi — muhim qarorlar uchun
   customs.uz yoki bojxona brokeridan tasdiqlashni tavsiya et.
 - Bilmagan narsangni to'qib chiqarma.`
@@ -169,8 +182,12 @@ func formatMatches(m hscode.Meta, matches []hscode.Match) string {
 		c := mt.Code
 		fmt.Fprintf(&b, "%s — %s\n", formatCode(c.Code), c.PathUZ)
 		fmt.Fprintf(&b, "   boj %g%% | QQS %g%%", c.ImportDuty, c.VAT)
-		if c.Excise > 0 {
-			fmt.Fprintf(&b, " | aksiz %g%%", c.Excise)
+		// Aksiz nil bo'lsa — bu "yo'q" emas, "noma'lum". Buni ochiq yozamiz,
+		// aks holda model "aksiz yo'q" degan xulosaga kelishi mumkin.
+		if c.Excise != nil {
+			fmt.Fprintf(&b, " | aksiz %g%%", *c.Excise)
+		} else {
+			b.WriteString(" | aksiz: bu bazada yo'q")
 		}
 		if c.ExportDuty > 0 {
 			fmt.Fprintf(&b, " | eksport boji %g%%", c.ExportDuty)

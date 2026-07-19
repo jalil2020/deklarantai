@@ -25,6 +25,11 @@ type Meta struct {
 	TotalCodes         int    `json:"total_codes"`
 	Note               string `json:"note,omitempty"`
 	UnitNote           string `json:"unit_note,omitempty"`
+
+	// ExciseNote — aksiz bu bazada YO'Qligini tushuntiradi.
+	// ExciseKnownCodes — stavkasi ma'lum bo'lgan kodlar soni (hozircha 0).
+	ExciseNote       string `json:"excise_note,omitempty"`
+	ExciseKnownCodes int    `json:"excise_known_codes"`
 }
 
 // Code — bitta tovar nomenklatura yozuvi.
@@ -45,9 +50,16 @@ type Code struct {
 	// Stavkalar, foizda (meta.rates_as_of sanasiga).
 	ImportDuty float64 `json:"import_duty"`
 	ExportDuty float64 `json:"export_duty"`
-	Excise     float64 `json:"excise"`
 	VAT        float64 `json:"vat"`
 	DutyLaw    string  `json:"duty_law,omitempty"`
+
+	// Excise — aksiz stavkasi, foizda.
+	//
+	// nil = NOMA'LUM (bu bazada ma'lumot yo'q), 0% DEGANI EMAS.
+	// Manba bazaning "an" maydoni bo'sh, shuning uchun hozircha hamma kodda nil.
+	// Haqiqiy stavkalar Soliq kodeksining 289¹–289³ moddalarida, tovar nomi
+	// bo'yicha — ular qonun korpusida (laws.json) mavjud.
+	Excise *float64 `json:"excise,omitempty"`
 
 	// search — qidiruv uchun oldindan tayyorlangan kichik harfli matn.
 	// JSON'ga chiqmaydi, yuklashda to'ldiriladi.
@@ -84,7 +96,7 @@ func Load(path string) (*Store, error) {
 	// Qidiruv matnini oldindan tayyorlaymiz — har so'rovda qayta hisoblamaslik uchun.
 	for i := range f.Codes {
 		c := &f.Codes[i]
-		c.search = strings.ToLower(c.Code + " " + c.PathUZ + " " + c.PathRU)
+		c.search = normalize(c.Code + " " + c.PathUZ + " " + c.PathRU)
 	}
 	return &Store{meta: f.Meta, codes: f.Codes}, nil
 }
@@ -106,6 +118,30 @@ func (s *Store) ByCode(code string) (Code, bool) {
 	return Code{}, false
 }
 
+// normalize — matnni qidiruv uchun bir ko'rinishga keltiradi.
+//
+// O'zbek lotin yozuvida "oʻ" va "gʻ" uchun maxsus belgi (U+02BB) ishlatiladi,
+// tutuq uchun U+02BC. Foydalanuvchi esa klaviaturadagi oddiy ' ni bosadi.
+// Normallashtirmasak, "qog'oz" so'rovi "qogʻoz" matnini topmaydi — bu
+// o'zbekchadagi juda ko'p so'zga ta'sir qiladi.
+//
+// Shuningdek: "muzlatkich" ↔ "muzlatgich" kabi -kich/-gich almashinuvi
+// rasmiy matn bilan kundalik yozuv orasidagi keng tarqalgan farq.
+func normalize(s string) string {
+	s = strings.ToLower(s)
+	s = apostrophes.Replace(s)
+	return strings.ReplaceAll(s, "kich", "gich")
+}
+
+var apostrophes = strings.NewReplacer(
+	"ʻ", "'", // ʻ  oʻ, gʻ
+	"ʼ", "'", // ʼ  tutuq belgisi
+	"‘", "'", // '
+	"’", "'", // '
+	"´", "'", // ´
+	"`", "'",
+)
+
 func normalizeCode(s string) string {
 	var b strings.Builder
 	for _, r := range s {
@@ -121,7 +157,7 @@ func normalizeCode(s string) string {
 // Kod bo'yicha qidiruv (raqamlar kiritilsa) va matn bo'yicha qidiruv
 // (o'zbekcha yoki ruscha) qo'llab-quvvatlanadi.
 func (s *Store) Search(query string, limit int) []Match {
-	q := strings.ToLower(strings.TrimSpace(query))
+	q := normalize(strings.TrimSpace(query))
 	if q == "" {
 		return nil
 	}
@@ -173,14 +209,37 @@ func score(c *Code, q string, terms []string) float64 {
 	if sc == 0 {
 		return 0
 	}
-	// Yakuniy tugun nomida uchrasa — qo'shimcha ball (aniqroq moslik).
-	leaf := strings.ToLower(c.NameUZ + " " + c.NameRU)
+
+	// Ierarxiyaning BOSH bo'g'ini — tovar pozitsiyasi sarlavhasi, ya'ni
+	// "bu narsa NIMA". Izohlardan ancha kuchli signal.
+	//
+	// Misol: "traktor" so'rovida
+	//   8701…  "Traktorlar (…); …; boshqalar"        ← bosh bo'g'inda
+	//   8407…  "Ichki yonuv dvigatellari; traktorlar uchun"  ← izohda
+	// Ikkalasi ham mos keladi, lekin foydalanuvchi traktorni so'ragan.
+	head := normalize(headSegment(c.PathUZ) + " " + headSegment(c.PathRU))
+	leaf := normalize(c.NameUZ + " " + c.NameRU)
 	for _, t := range terms {
-		if len([]rune(t)) >= 3 && strings.Contains(leaf, t) {
+		if len([]rune(t)) < 3 {
+			continue
+		}
+		if strings.Contains(head, t) {
+			sc += 8
+		}
+		// Yakuniy tugun nomida uchrasa — aniqroq moslik.
+		if strings.Contains(leaf, t) {
 			sc += 4
 		}
 	}
 	return sc
+}
+
+// headSegment — ierarxik tavsifning birinchi bo'g'ini ("A; B; C" → "A").
+func headSegment(path string) string {
+	if i := strings.Index(path, ";"); i >= 0 {
+		return path[:i]
+	}
+	return path
 }
 
 func sortMatches(m []Match) {
