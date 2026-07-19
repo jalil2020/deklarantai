@@ -22,6 +22,16 @@ const MAP = {
 const CYRILLIC = /[а-яёқғҳў]/i
 const VOWELS = new Set('аеёиоуўыэюя')
 
+// "ц" ning o'zbekcha lotin yozuvidagi qoidasi:
+//   so'z boshida        → s   (цемент → sement)
+//   UNDOSHdan keyin     → s   (акциз → aksiz, функция → funksiya, станция → stansiya)
+//   unlidan keyin       → ts  (декларация → deklaratsiya, позиция → pozitsiya)
+// Bu muhim: "aktsiz" deb yozsak, foydalanuvchining "aksiz" so'rovi topmaydi.
+function tsRule(prev) {
+  if (prev === '') return 's'
+  return VOWELS.has(prev) ? 'ts' : 's'
+}
+
 /** Bitta so'zni (faqat kichik harflarda) o'giradi. */
 function wordToLatin(lower) {
   let out = ''
@@ -29,7 +39,7 @@ function wordToLatin(lower) {
     const ch = lower[i]
     const prev = i > 0 ? lower[i - 1] : ''
     if (ch === 'е') out += prev === '' || VOWELS.has(prev) ? 'ye' : 'e'
-    else if (ch === 'ц') out += prev === '' ? 's' : 'ts'
+    else if (ch === 'ц') out += tsRule(prev)
     else out += MAP[ch] ?? ch
   }
   return out

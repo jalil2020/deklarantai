@@ -53,6 +53,7 @@ type Match struct {
 type Store struct {
 	meta   Meta
 	chunks []Chunk
+	avgLen float64 // parchalarning o'rtacha uzunligi — uzunlik normalizatsiyasi uchun
 }
 
 type storeFile struct {
@@ -70,11 +71,17 @@ func Load(path string) (*Store, error) {
 	if err := json.Unmarshal(b, &f); err != nil {
 		return nil, err
 	}
+	var total float64
 	for i := range f.Chunks {
 		c := &f.Chunks[i]
 		c.search = strings.ToLower(c.Title + "\n" + c.Text)
+		total += float64(len(c.search))
 	}
-	return &Store{meta: f.Meta, chunks: f.Chunks}, nil
+	avg := 1.0
+	if len(f.Chunks) > 0 {
+		avg = total / float64(len(f.Chunks))
+	}
+	return &Store{meta: f.Meta, chunks: f.Chunks, avgLen: avg}, nil
 }
 
 // Meta — korpus haqidagi ma'lumot.
@@ -126,7 +133,7 @@ func (s *Store) Search(query string, limit int) []Match {
 
 	var out []Match
 	for i := range s.chunks {
-		if sc := score(&s.chunks[i], terms, hits[i], idf); sc > 0 {
+		if sc := score(&s.chunks[i], terms, hits[i], idf, s.avgLen); sc > 0 {
 			out = append(out, Match{Chunk: s.chunks[i], Score: sc})
 		}
 	}
@@ -205,24 +212,32 @@ func countTerm(hay, term string) (int, float64) {
 // hits[j] — j-atamaning shu parchadagi uchrashi, idf[j] — atamaning
 // noyobligi. Ball = Σ (uchrash × ishonch × noyoblik), ustiga sarlavhadagi
 // moslik va turli atamalar qamrovi uchun bonus.
-func score(c *Chunk, terms []string, hits []hit, idf []float64) float64 {
+// BM25 parametrlari: k1 — takrorlanishning to'yinish tezligi,
+// b — uzunlik normalizatsiyasining kuchi (0 = yo'q, 1 = to'liq).
+const (
+	bm25K1 = 1.5
+	bm25B  = 0.75
+)
+
+func score(c *Chunk, terms []string, hits []hit, idf []float64, avgLen float64) float64 {
 	var sc, matchedIdf, totalIdf float64
 	title := strings.ToLower(c.Title)
 	for j := range terms {
 		totalIdf += idf[j]
 	}
+	// Uzunlik normalizatsiyasi: qisqa parchada bir marta uchragan atama
+	// uzun parchadagidan qimmatliroq. Busiz "aroq" so'zi 1 800 belgilik
+	// alkogol moddasida bir marta uchrasa, uzunroq parchalar hajmi bilan
+	// yutib ketardi.
+	norm := 1 - bm25B + bm25B*float64(len(c.search))/avgLen
 	for j, h := range hits {
 		if h.n == 0 {
 			continue
 		}
 		matchedIdf += idf[j]
-		// Takrorlanish foydali, lekin cheksiz emas — uzun parchalar
-		// shunchaki hajmi tufayli yutib ketmasligi uchun cheklaymiz.
-		n := h.n
-		if n > 4 {
-			n = 4
-		}
-		sc += float64(n) * h.conf * idf[j]
+		// BM25 tf: takrorlanish foyda beradi, lekin to'yinadi.
+		tf := float64(h.n)
+		sc += (tf * (bm25K1 + 1) / (tf + bm25K1*norm)) * h.conf * idf[j]
 		// Sarlavhada uchrasa — kuchli signal.
 		if tn, tconf := countTerm(title, terms[j]); tn > 0 {
 			sc += 6 * tconf * idf[j]
