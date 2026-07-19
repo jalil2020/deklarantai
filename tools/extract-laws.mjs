@@ -67,8 +67,21 @@ const unzip = (blob) => {
   return b.toString('utf8')
 }
 
+// Ustki indeks raqamlari. Qonunlarda "289¹-modda" kabi moddalar bor —
+// ular asosiy moddaga keyinchalik qo'shilgan. HTML da <sup>1</sup> bilan
+// beriladi.
+//
+// NEGA MUHIM: teglarni shunchaki olib tashlasak, raqamlar BIRIKIB ketadi —
+// "289" + "1" = "2891". Natijada korpusda mavjud bo'lmagan "2891-modda"
+// paydo bo'ladi va AI o'sha sarlavhani iqtibos qilib, YO'Q moddaga havola
+// beradi. Aksiz stavkalari aynan 289¹–289³ moddalarida, ya'ni bu xato eng
+// muhim joyga tushgan edi.
+const SUPERSCRIPT = { 0: '⁰', 1: '¹', 2: '²', 3: '³', 4: '⁴', 5: '⁵', 6: '⁶', 7: '⁷', 8: '⁸', 9: '⁹' }
+const supDigits = (s) => s.replace(/\d/g, (d) => SUPERSCRIPT[d] ?? d)
+
 const toText = (html) => html
   .replace(/<style[\s\S]*?<\/style>/gi, '').replace(/<script[\s\S]*?<\/script>/gi, '')
+  .replace(/<sup[^>]*>\s*([\d\s]+?)\s*<\/sup>/gi, (_, d) => supDigits(d.replace(/\s+/g, '')))
   .replace(/<\/t[dh]>/gi, ' | ').replace(/<\/tr>/gi, '\n').replace(/<br\s*\/?>/gi, '\n')
   .replace(/<\/(p|div|li|h\d)>/gi, '\n').replace(/<[^>]+>/g, '')
   .replace(/&nbsp;/g, ' ').replace(/&laquo;/g, '«').replace(/&raquo;/g, '»')
@@ -82,8 +95,11 @@ const MAX_CHUNK = 4000 // belgi; uzun moddalar bo'linadi
  * Matnni moddalarga bo'ladi. O'zbekchada "N-модда.", ruschada "Статья N.".
  * Mundarija (moddalar ro'yxati) tashlab yuboriladi — undagi bo'laklar juda qisqa.
  */
+const SUP = '⁰¹²³⁴⁵⁶⁷⁸⁹'
+
 function chunkByArticle(text) {
-  const re = /(?:^|\n)\s*(\d+(?:\s*\d+)?\s*-\s*модда\.|Статья\s+\d+(?:\.\d+)?\.)/g
+  const re = new RegExp(
+    `(?:^|\\n)\\s*(\\d+[${SUP}]*\\s*-\\s*модда\\.|Статья\\s+\\d+[${SUP}]*(?:\\.\\d+)?\\.)`, 'g')
   const marks = [...text.matchAll(re)]
   if (marks.length < 2) return splitLong({ title: '', text })
 
@@ -92,7 +108,14 @@ function chunkByArticle(text) {
     const start = marks[i].index
     const end = i + 1 < marks.length ? marks[i + 1].index : text.length
     const body = text.slice(start, end).trim()
-    if (body.length < 200) continue // mundarija qatori — tashlaymiz
+    // MUNDARIJA qatorini tashlaymiz. Avval "200 belgidan qisqa bo'lsa tashla"
+    // deyilgan edi, lekin bu haqiqiy qisqa moddalarni ham yo'q qilardi —
+    // Bojxona kodeksidan 7, 103, 110, 257-modda shu tariqa tushib qolgan edi.
+    //
+    // Aniqroq belgi: mundarijada modda BIR QATOR bo'lib, faqat sarlavhadan
+    // iborat; haqiqiy moddada esa sarlavhadan keyin matn keladi, ya'ni
+    // qator ajratgichi bo'ladi (masalan 257-modda — 85 belgi, 2 qator).
+    if (!body.includes('\n') && body.length < 160) continue
     const title = body.split('\n')[0].trim().slice(0, 160)
     out.push(...splitLong({ title, text: body }))
   }

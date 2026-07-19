@@ -71,7 +71,7 @@ tizim konventsiyasi (Bryussel, 14.06.1983).
 
 ## Qonun korpusi (RAG)
 
-`backend/data/laws.json` — **1 045 parcha, 89 hujjatdan** (3,9 MB). Generatsiya:
+`backend/data/laws.json` — **1 111 parcha, 89 hujjatdan** (3,9 MB). Generatsiya:
 
 ```bash
 node tools/extract-laws.mjs [--dry]
@@ -99,6 +99,20 @@ ikkita qaror** bor — ПКМ 700 (2020, 2025-05-04 da bekor qilingan) va ПКМ
 (2025). Ikkalasi ham korpusda qolsa, RAG eskirgan stavkani qaytarishi mumkin.
 
 Parchalash — moddalar bo'yicha (`N-modda`), 4000 belgidan uzunlari bo'linadi.
+
+⚠️ **Ustki indeksli moddalar** (`289¹`) alohida e'tibor talab qiladi. Manba
+HTML da ular `289<sup>1</sup>-модда` ko'rinishida; teglar shunchaki olib
+tashlansa raqamlar birikib ketadi va korpusda **mavjud bo'lmagan
+"2891-modda"** paydo bo'ladi. AI o'sha sarlavhani iqtibos qilsa, yo'q moddaga
+havola bergan bo'lardi — aksiz stavkalari aynan 289¹–289³ da bo'lgani uchun
+xato eng muhim joyga tushgan edi. Endi `<sup>` Unicode ustki indeksga
+o'giriladi; `TestSuperscriptArticles` buni qo'riqlaydi.
+
+⚠️ **Mundarija qatorlari** korpusga tushmasligi kerak, lekin ularni
+"200 belgidan qisqa" deb filtrlash haqiqiy qisqa moddalarni ham yo'q qilardi
+(Bojxona kodeksidan 7, 103, 110, 257-modda). Aniqroq belgi: mundarijada modda
+bir qator, faqat sarlavhadan iborat. Shundan keyin Bojxona kodeksi 443 →
+507 parchaga chiqdi, moddalar 1–412 (6 ta bo'shliq — bekor qilingan moddalar).
 Matn **rasmiy o'zbekcha** versiyadan olinadi (ruschasi ayrim hujjatlarda mashina
 tarjimasi bo'lib, yuridik kuchga ega emas) va lotinga transliteratsiya qilinadi.
 
@@ -205,7 +219,12 @@ Bular bilib turib qoldirilgan — ishlatishdan oldin hisobga olish kerak.
 - [ ] **Utilizatsiya yig'imi (79)** — avtotransport uchun, netto vazn bo'yicha.
       Umuman qo'llab-quvvatlanmaydi.
 - [ ] **Qo'shimcha boj (21)** — qaysi hollarda qo'llanishi tekshirilmagan.
-- [ ] Kalkulyator manba ning o'z natijasi bilan solishtirilmagan.
+- [x] Kalkulyator manba ning o'z natijasi bilan solishtirildi va **aynan
+      mos keldi** (`TestReferenceReferenceCase`): kod 3001209000, faktura
+      1 230 000 + transport 25 000 USD, kurs 12 093,35 → qiymat
+      15 177 154 250, yig'im 10 300 000 (25×BRV), QQS 1 821 258 510,
+      jami 1 831 558 510. Bu QQS bazasidan yig'im chiqarilishini ham
+      tasdiqladi — aks holda QQS 1 236 000 so'mga ortiq chiqardi.
 
 **Ma'lumotda:**
 

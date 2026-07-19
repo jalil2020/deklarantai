@@ -2,6 +2,7 @@ package laws
 
 import (
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -116,5 +117,65 @@ func TestStemMatch(t *testing.T) {
 	// To'liq moslik — to'liq ishonch.
 	if _, conf := countTerm("bojxona kodeksi", "bojxona"); conf != 1 {
 		t.Errorf("to'liq moslik ishonchi = %v; 1 kutilgan", conf)
+	}
+}
+
+// Ustki indeksli moddalar to'g'ri saqlanishi.
+//
+// Manba HTML da ular <sup> bilan beriladi: 289<sup>1</sup>-модда.
+// Teglar shunchaki olib tashlansa, raqamlar BIRIKIB ketadi va korpusda
+// mavjud bo'lmagan "2891-modda" paydo bo'ladi — AI esa o'sha sarlavhani
+// iqtibos qilib, YO'Q moddaga havola beradi. Aksiz stavkalari aynan
+// 289¹–289³ moddalarida, ya'ni xato eng muhim joyga tushgan edi.
+func TestSuperscriptArticles(t *testing.T) {
+	s, err := Load("../../data/laws.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Aksiz moddalari — chat ko'rsatmasi aynan shu raqamlarga yo'naltiradi.
+	for _, want := range []string{"289¹-modda", "289²-modda", "289³-modda"} {
+		found := false
+		for _, c := range s.chunks {
+			if strings.HasPrefix(strings.TrimSpace(c.Title), want) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("%q sarlavhali parcha topilmadi", want)
+		}
+	}
+
+	// Birikib ketgan raqam qolmasligi kerak: O'zbekiston kodekslarida
+	// to'rt xonali modda raqami yo'q, demak "2891-modda" — xato belgisi.
+	bad := regexp.MustCompile(`^\d{4,}-modda`)
+	for _, c := range s.chunks {
+		if bad.MatchString(strings.TrimSpace(c.Title)) {
+			t.Errorf("birikib ketgan modda raqami: %q (%s)", c.Title, c.Name)
+		}
+	}
+}
+
+// Mundarija qatorlari korpusga tushmasligi, lekin haqiqiy qisqa moddalar
+// saqlanishi kerak. Ilgari "200 belgidan qisqa bo'lsa tashla" qoidasi
+// Bojxona kodeksidan 7, 103, 110, 257-moddani ham yo'q qilgan edi.
+func TestShortArticlesKept(t *testing.T) {
+	s, err := Load("../../data/laws.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"7-modda", "103-modda", "110-modda", "257-modda"} {
+		found := false
+		for _, c := range s.chunks {
+			if strings.Contains(c.Name, "Таможенный кодекс") &&
+				strings.HasPrefix(strings.TrimSpace(c.Title), want) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("Bojxona kodeksida %q topilmadi", want)
+		}
 	}
 }

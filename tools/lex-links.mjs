@@ -58,6 +58,12 @@ export const LEX_LINKS = [
   { name: /грузовых операций в отношении товаров, находящихся под таможенным контролем/i,
     date: '20.08.2021', url: 'https://lex.uz/docs/5592823' },  // ПКМ 531
 
+  // --- Boj stavkalari ---
+  // ПП-3818 — import boji stavkalari (1-ilova). manba kalkulyatori ham
+  // "20. Там. пошлина" yonida aynan shu hujjatga havola qiladi.
+  { name: /упорядочению внешнеэкономической деятельности и совершенствованию системы таможенно/i,
+    date: '29.06.2018', url: 'https://lex.uz/docs/3802366' },
+
   // --- Imtiyozlar va taqiqlar ---
   { name: /льгот по таможенной пошлине и налогу на добавленную стоимость/i,
     date: '27.11.2020', url: 'https://lex.uz/docs/5131865' },  // ПКМ 750

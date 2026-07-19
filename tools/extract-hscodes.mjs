@@ -194,6 +194,12 @@ const out = {
   meta: {
     nomenclature: 'TIF TN 2025',
     legal_basis: 'ПКМ № 181 (14.05.2025) — TIF TN tasdiqlangan, 01.06.2025 dan amalda',
+    // Matni manba bazada yo'q (IsLoad=0), shuning uchun qonun korpusiga
+    // kirmagan — lekin havolasi bo'lsa, foydalanuvchi asosni tekshira oladi.
+    legal_basis_lex: 'https://lex.uz/docs/7533469',
+    // Boj stavkalarining asosi: ПП-3818, 1-ilova (import boji stavkalari).
+    duty_rates_basis: 'ПП-3818 (29.06.2018), 1-ilova',
+    duty_rates_lex: 'https://lex.uz/docs/3802366',
     transition_list: 'ПКМ № 349 (04.06.2025) — kodlar o\'zgarishi ro\'yxati',
     international_basis: 'Garmonizatsiyalangan tizim konventsiyasi (Bryussel, 14.06.1983)',
     rates_as_of: ON.toISOString().slice(0, 10),

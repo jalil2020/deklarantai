@@ -159,3 +159,44 @@ func TestFeeScaleText(t *testing.T) {
 		}
 	}
 }
+
+// Rasmiy manba kalkulyatori natijasi bilan solishtirish.
+//
+// Manba: dasturning ekrani, kod 3001209000, hisob sanasi 19.07.2026.
+// Kiritilgan: faktura 1 230 000 USD, transport 25 000 USD, kurs 12 093,35,
+// miqdor 5 622 kg, boj/aksiz "не установлено", QQS 12%.
+//
+// Dastur chiqargan natija:
+//
+//	Итого там. стоимость  15 177 154 250,00
+//	10. Тамож. сбор           10 300 000,00   (25 БРВ)
+//	29. НДС                1 821 258 510,00
+//	Итого                  1 831 558 510,00
+//
+// Bu test IKKI narsani qo'riqlaydi:
+//  1. Yig'im shkalasining eng yuqori pog'onasi (1 mln USD dan yuqori -> 25×BRV).
+//  2. QQS bazasiga bojxona yig'imi KIRMASLIGI (SK 254-modda). Agar yig'im
+//     bazaga qo'shilsa, QQS 1 822 494 510 chiqardi — ya'ni 1 236 000 so'm
+//     ortiq. Rasmiy dastur ham yig'imni bazaga qo'shmaydi.
+func TestReferenceReferenceCase(t *testing.T) {
+	const rate = 12_093.35
+	r := Calculate(Request{
+		Date:         testDate,
+		Invoice:      1_230_000,
+		Transport:    25_000,
+		CurrencyRate: rate,
+		USDRate:      rate,
+		ImportDuty:   0,
+		VAT:          12,
+		Quantity:     5_622,
+	})
+
+	eq(t, r.CustomsValue, 15_177_154_250, "bojxona qiymati")
+	eq(t, find(r, "10").Amount, 10_300_000, "yig'im (25×BRV)")
+	eq(t, find(r, "29").Amount, 1_821_258_510, "QQS")
+	eq(t, r.Total, 1_831_558_510, "jami")
+
+	// Boj va aksiz belgilanmagan — to'lov chiqmasligi kerak.
+	eq(t, find(r, "20").Amount, 0, "boj")
+	eq(t, find(r, "27").Amount, 0, "aksiz")
+}
