@@ -403,6 +403,45 @@ Kesh: tarixiy kurs muddatsiz (u o'zgarmaydi), bugungisi kun oxirigacha.
 | `CBU_API_URL` | cbu.uz | Boshqa manba yoki testdagi soxta server |
 | `CONTACT_TELEGRAM` | t.me/declarant_pro | Tadbirkor rejimida beriladigan murojaat kanali |
 
+## Admin paneli
+
+`http://<host>/admin` — parol bilan himoyalangan panel: foydalanish
+statistikasi (o'qish) va ma'lumot bazalari holati. Bitta o'z-o'zicha HTML
+sahifa, Go ichiga `embed` bilan qo'yilgan — alohida build yo'q.
+
+```bash
+ADMIN_PASSWORD="kuchli-parol" go run .   # panelni yoqadi
+```
+
+**Ko'rsatadi:**
+- Sarf jurnali — model bo'yicha token (kirish/chiqish/kesh), so'nggi
+  so'rovlar, API so'rovlar soni, ishlash vaqti
+- Bazalar holati — kodlar, qonun korpusi (lex.uz havola qamrovi bilan),
+  hujjat talablari, davlatlar; har birining `rates_as_of` sanasi
+
+⚠️ **FAIL CLOSED — eng muhim xususiyat.** `ADMIN_PASSWORD` o'rnatilmagan
+bo'lsa, `/admin` yo'llari **umuman mavjud emas** (404, 401 ham emas). Bu
+tasodifan himoyasiz panel ochib qo'yishning oldini oladi.
+
+Xavfsizlik qatlamlari (`internal/api/admin.go`):
+
+| Nima | Qanday |
+|---|---|
+| Parol solishtirish | `crypto/subtle` — doimiy vaqt, timing hujumiga qarshi |
+| Sessiya tokeni | `crypto/rand`, 32 bayt — taxmin qilib bo'lmaydi |
+| Cookie | `HttpOnly` + `SameSite=Strict` + `Path=/admin`; HTTPS da `Secure` |
+| Login urinishi | IP bo'yicha daqiqasiga 5 ta — brute-force ga qarshi |
+| Sessiya muddati | 8 soat, keyin bekor |
+| Clickjacking | `X-Frame-Options: DENY` + CSP `frame-ancestors 'none'` |
+
+⚠️ Bu **bir kishilik** admin uchun. Sessiyalar xotirada — bir nechta
+server nusxasi ishlaganda umumiy do'kon (Redis) kerak. Parol bitta,
+foydalanuvchi hisoblari yo'q.
+
+| O'zgaruvchi | Tavsif |
+|---|---|
+| `ADMIN_PASSWORD` | Panel paroli (bo'sh = panel o'chiq) |
+
 ## Xarajat nazorati
 
 Har bir chat so'rovi pul turadi, shuning uchun to'rt qatlam qo'yilgan.

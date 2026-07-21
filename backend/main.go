@@ -52,14 +52,6 @@ func main() {
 			docStore.Len(), dm.Types, dm.RulesAsOf)
 	}
 
-	// Har so'rovning token sarfini jurnalga yozamiz — xarajatni ko'rmasdan
-	// boshqarib bo'lmaydi. cache_read nolga teng bo'lib qolsa, kesh
-	// ishlamayapti degani va tizim ko'rsatmasi har safar to'liq to'lanadi.
-	llm.OnUsage = func(u llm.Usage) {
-		log.Printf("sarf: model=%s kirish=%d chiqish=%d kesh(yozildi=%d o'qildi=%d)",
-			u.Model, u.InputTokens, u.OutputTokens, u.CacheWrite, u.CacheRead)
-	}
-
 	// Davlatlar ma'lumotnomasi — boj kelib chiqishga bog'liq (BK 300-modda).
 	countryStore, err := countries.Load(countriesPath)
 	if err != nil {
@@ -82,6 +74,21 @@ func main() {
 
 	chatSvc := chat.New(llmClient, codes, lawStore, docStore, rateClient)
 	srv := api.New(codes, lawStore, chatSvc, llmClient, countryStore, rateClient, docStore)
+
+	// Har so'rovning token sarfini jurnalga yozamiz va admin statistikasiga
+	// qo'shamiz — xarajatni ko'rmasdan boshqarib bo'lmaydi. cache_read nolga
+	// teng bo'lib qolsa, kesh ishlamayapti va ko'rsatma har safar to'lanadi.
+	llm.OnUsage = func(u llm.Usage) {
+		log.Printf("sarf: model=%s kirish=%d chiqish=%d kesh(yozildi=%d o'qildi=%d)",
+			u.Model, u.InputTokens, u.OutputTokens, u.CacheWrite, u.CacheRead)
+		srv.RecordUsage(u)
+	}
+
+	if os.Getenv("ADMIN_PASSWORD") != "" {
+		log.Printf("Admin paneli yoqilgan: http://localhost%s/admin", addr)
+	} else {
+		log.Printf("Admin paneli o'chirilgan (ADMIN_PASSWORD sozlanmagan)")
+	}
 
 	log.Printf("Server ishga tushdi: http://localhost%s", addr)
 	if err := http.ListenAndServe(addr, srv.Routes()); err != nil {

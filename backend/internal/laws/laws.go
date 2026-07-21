@@ -271,3 +271,14 @@ func score(c *Chunk, terms []string, hits []hit, idf []float64, avgLen float64) 
 	// o'lchanadi: bo'sh so'zlarni qoplash deyarli hech narsa bermaydi.
 	return sc * (1 + matchedIdf/totalIdf)
 }
+
+// LinkCoverage — lex.uz havolasi bor parchalar soni va ulushi.
+func (s *Store) LinkCoverage() (withLink, total int) {
+	total = len(s.chunks)
+	for i := range s.chunks {
+		if s.chunks[i].Lex != "" {
+			withLink++
+		}
+	}
+	return withLink, total
+}

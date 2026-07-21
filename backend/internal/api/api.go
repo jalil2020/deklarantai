@@ -29,7 +29,15 @@ type Server struct {
 	rates     *rates.Client    // nil bo'lishi mumkin
 	docs      *docs.Store      // nil bo'lishi mumkin
 	limiter   *limiter
+	admin     *adminAuth
+	stats     *stats
 }
+
+// Stats — foydalanish statistikasi (main.go OnUsage ga ulanadi).
+func (s *Server) Stats() *stats { return s.stats }
+
+// RecordUsage — token sarfini statistikaga qo'shadi.
+func (s *Server) RecordUsage(u llm.Usage) { s.stats.addUsage(u, time.Now()) }
 
 // New — server yaratadi.
 func New(codes *hscode.Store, lawStore *laws.Store, chatSvc *chat.Service, llmClient *llm.Client, countryStore *countries.Store, rateClient *rates.Client, docStore *docs.Store) *Server {
@@ -42,7 +50,18 @@ func New(codes *hscode.Store, lawStore *laws.Store, chatSvc *chat.Service, llmCl
 		rates:     rateClient,
 		docs:      docStore,
 		limiter:   newLimiter(),
+		admin:     newAdminAuth(),
+		stats:     newStats(time.Now()),
 	}
+}
+
+// lawsLinkCoverage — qonun korpusidagi lex.uz havola qamrovi.
+func (s *Server) lawsLinkCoverage() map[string]int {
+	if s.laws == nil {
+		return nil
+	}
+	with, total := s.laws.LinkCoverage()
+	return map[string]int{"with_link": with, "total": total}
 }
 
 // Routes — barcha marshrutlarni ro'yxatdan o'tkazadi.
@@ -55,10 +74,13 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /api/exemptions", s.handleExemptions)
 	mux.HandleFunc("POST /api/chat", s.handleChat)
 	mux.HandleFunc("POST /api/chat/stream", s.handleChatStream)
+	// Admin paneli — ADMIN_PASSWORD o'rnatilgan bo'lsagina ro'yxatga
+	// olinadi. Aks holda /admin yo'llari umuman mavjud emas (404).
+	s.adminRoutes(mux)
 	// Tartib muhim: CORS eng tashqarida bo'lishi kerak, aks holda
 	// cheklovga uchragan javobda CORS sarlavhalari bo'lmaydi va brauzer
 	// xato matnini o'qiy olmay, foydalanuvchi sababni bilmay qoladi.
-	return withCORS(s.withLimits(mux))
+	return withCORS(s.countRequests(s.withLimits(mux)))
 }
 
 // ---- Health ----
@@ -263,6 +285,17 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 
 func writeErr(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, map[string]string{"error": msg})
+}
+
+// countRequests — statistika uchun so'rovlarni sanaydi.
+// Admin yo'llari sanalmaydi — ular o'z-o'zini kuzatib qolmasin.
+func (s *Server) countRequests(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/api/") {
+			s.stats.countRequest(r.URL.Path)
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func withCORS(next http.Handler) http.Handler {

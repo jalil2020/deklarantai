@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="uz">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Deklarant AI — Admin</title>
+<style>
+  :root { --bg:#f4f7fb; --card:#fff; --ink:#1e2a3a; --muted:#64748b;
+    --line:#e2e8f0; --brand:#2563eb; --danger:#dc2626; --ok:#16a34a; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#0f172a; --card:#1e293b; --ink:#e2e8f0; --muted:#94a3b8;
+      --line:#334155; --brand:#3b82f6; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    background: var(--bg); color: var(--ink); line-height: 1.5; }
+  .wrap { max-width: 960px; margin: 0 auto; padding: 1.5rem 1rem 4rem; }
+  h1 { font-size: 1.3rem; margin: 0; }
+  h2 { font-size: 1rem; margin: 1.8rem 0 0.7rem; color: var(--muted); font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.04em; }
+  .top { display:flex; align-items:center; justify-content:space-between; gap:1rem;
+    padding-bottom: 1rem; border-bottom: 1px solid var(--line); }
+  .card { background: var(--card); border:1px solid var(--line); border-radius: 14px;
+    padding: 1rem 1.2rem; margin-bottom: 0.8rem; }
+  .grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(150px,1fr)); gap:0.8rem; }
+  .stat { background: var(--card); border:1px solid var(--line); border-radius: 12px; padding: 0.9rem 1rem; }
+  .stat .n { font-size: 1.5rem; font-weight: 700; }
+  .stat .l { font-size: 0.8rem; color: var(--muted); }
+  table { width:100%; border-collapse: collapse; font-size: 0.88rem; }
+  th, td { text-align:left; padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--line); }
+  th { color: var(--muted); font-weight: 600; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  button { font: inherit; cursor: pointer; border: none; border-radius: 9px;
+    padding: 0.5rem 0.9rem; background: var(--brand); color:#fff; }
+  button.ghost { background: transparent; color: var(--muted); border:1px solid var(--line); }
+  input { font: inherit; padding: 0.55rem 0.7rem; border:1px solid var(--line);
+    border-radius: 9px; background: var(--card); color: var(--ink); width:100%; }
+  .login { max-width: 340px; margin: 4rem auto; }
+  .login .card { display:flex; flex-direction:column; gap:0.8rem; }
+  .err { color: var(--danger); font-size: 0.85rem; min-height: 1.2em; }
+  .muted { color: var(--muted); }
+  .wrap-scroll { overflow-x: auto; }
+  code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.85em; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- Login -->
+  <div id="login" class="login hidden">
+    <div class="card">
+      <h1>Deklarant AI — Admin</h1>
+      <p class="muted" style="margin:0">Panelga kirish uchun parolni kiriting.</p>
+      <input id="pw" type="password" placeholder="Admin parol" autocomplete="current-password">
+      <button id="loginBtn">Kirish</button>
+      <div id="loginErr" class="err"></div>
+    </div>
+  </div>
+
+  <!-- Panel -->
+  <div id="panel" class="hidden">
+    <div class="top">
+      <h1>Deklarant AI — Admin</h1>
+      <button id="logoutBtn" class="ghost">Chiqish</button>
+    </div>
+
+    <h2>Foydalanish</h2>
+    <div id="stats" class="grid"></div>
+
+    <h2>Token sarfi (model bo'yicha)</h2>
+    <div class="card wrap-scroll"><table id="tokens"></table></div>
+
+    <h2>So'nggi so'rovlar</h2>
+    <div class="card wrap-scroll"><table id="recent"></table></div>
+
+    <h2>Ma'lumot bazalari</h2>
+    <div id="data"></div>
+  </div>
+
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id)
+const fmt = (n) => new Intl.NumberFormat('uz-UZ').format(n)
+
+async function api(path, opts) {
+  const res = await fetch(path, { credentials: 'same-origin', ...opts })
+  if (res.status === 401) { showLogin(); throw new Error('avtorizatsiya kerak') }
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(data.error || ('Xato ' + res.status))
+  return data
+}
+
+function showLogin() { $('login').classList.remove('hidden'); $('panel').classList.add('hidden') }
+function showPanel() { $('login').classList.add('hidden'); $('panel').classList.remove('hidden') }
+
+$('loginBtn').onclick = async () => {
+  $('loginErr').textContent = ''
+  try {
+    await api('/admin/api/login', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: $('pw').value }),
+    })
+    $('pw').value = ''
+    await load()
+  } catch (e) { $('loginErr').textContent = e.message }
+}
+$('pw').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('loginBtn').click() })
+
+$('logoutBtn').onclick = async () => {
+  try { await api('/admin/api/logout', { method: 'POST' }) } catch {}
+  showLogin()
+}
+
+function renderStats(s) {
+  const totalReq = Object.values(s.requests || {}).reduce((a, b) => a + b, 0)
+  let out = 0, inp = 0, cache = 0
+  for (const t of Object.values(s.tokens || {})) { out += t.output; inp += t.input; cache += t.cache_read }
+  const hrs = Math.floor(s.uptime_seconds / 3600), mins = Math.floor((s.uptime_seconds % 3600) / 60)
+  $('stats').innerHTML = [
+    ['Ishga tushgan', hrs + ' soat ' + mins + ' daqiqa'],
+    ['API so\'rovlar', fmt(totalReq)],
+    ['Kirish tokenlari', fmt(inp)],
+    ['Chiqish tokenlari', fmt(out)],
+    ['Keshdan o\'qildi', fmt(cache)],
+  ].map(([l, n]) => `<div class="stat"><div class="n">${n}</div><div class="l">${l}</div></div>`).join('')
+
+  // Token jadvali
+  const rows = Object.entries(s.tokens || {}).map(([m, t]) =>
+    `<tr><td><code>${m}</code></td><td class="num">${fmt(t.calls)}</td>
+     <td class="num">${fmt(t.input)}</td><td class="num">${fmt(t.output)}</td>
+     <td class="num">${fmt(t.cache_read)}</td></tr>`).join('')
+  $('tokens').innerHTML = rows
+    ? `<tr><th>Model</th><th class="num">Chaqiruv</th><th class="num">Kirish</th>
+       <th class="num">Chiqish</th><th class="num">Keshdan</th></tr>${rows}`
+    : '<tr><td class="muted">Hali sarf yo\'q</td></tr>'
+
+  // So'nggi so'rovlar
+  const rec = (s.recent || []).slice(0, 20).map(r => {
+    const t = new Date(r.at).toLocaleTimeString('uz-UZ')
+    return `<tr><td class="muted">${t}</td><td><code>${r.model}</code></td>
+      <td class="num">${fmt(r.input)}</td><td class="num">${fmt(r.output)}</td>
+      <td class="num">${fmt(r.cache_read)}</td></tr>`
+  }).join('')
+  $('recent').innerHTML = rec
+    ? `<tr><th>Vaqt</th><th>Model</th><th class="num">Kirish</th>
+       <th class="num">Chiqish</th><th class="num">Keshdan</th></tr>${rec}`
+    : '<tr><td class="muted">Hali so\'rov yo\'q</td></tr>'
+}
+
+function renderData(d) {
+  const cov = d.laws_link_coverage
+  const pct = cov ? Math.round(cov.with_link / cov.total * 100) : 0
+  const rows = [
+    ['TIF TN kodlari', d.codes ? fmt(d.codes.total_codes) + ' ta' : '—',
+      d.codes ? 'stavkalar ' + d.codes.rates_as_of + ' holatiga' : ''],
+    ['Qonun korpusi', d.laws ? fmt(d.laws.chunks) + ' parcha, ' + d.laws.docs + ' hujjat' : '—',
+      cov ? 'lex.uz havola: ' + pct + '% (' + fmt(cov.with_link) + '/' + fmt(cov.total) + ')' : ''],
+    ['Hujjat talablari', d.docs ? fmt(d.docs.rules) + ' qoida, ' + d.docs.types + ' tur' : '—',
+      d.exemption_programs != null ? d.exemption_programs + ' imtiyoz dasturi' : ''],
+    ['Davlatlar', d.countries ? fmt(d.countries.total) + ' ta' : '—',
+      d.countries ? d.countries.legal_basis : ''],
+  ]
+  $('data').innerHTML = rows.map(([l, v, note]) =>
+    `<div class="card"><strong>${l}:</strong> ${v}${note ? ` <span class="muted">— ${note}</span>` : ''}</div>`
+  ).join('')
+}
+
+async function load() {
+  try {
+    const [s, d] = await Promise.all([api('/admin/api/stats'), api('/admin/api/data')])
+    renderStats(s); renderData(d); showPanel()
+  } catch (e) {
+    if (e.message !== 'avtorizatsiya kerak') $('loginErr').textContent = e.message
+  }
+}
+
+// Boshlanishida sessiya bormi tekshiramiz.
+load()
+// Har 10 soniyada statistikani yangilaymiz (panel ochiq bo'lsa).
+setInterval(() => { if (!$('panel').classList.contains('hidden')) load() }, 10000)
+</script>
+</body>
+</html>
