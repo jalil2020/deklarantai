@@ -116,7 +116,7 @@ for (const r of db.prepare('SELECT * FROM countries ORDER BY code').all()) {
 
 const file = {
   meta: {
-    source: 'ichki manba baza',
+    source: 'ichki manba baza — davlatlar',
     script: 'tools/extract-countries.mjs',
     legal_basis: 'Bojxona kodeksi 300-modda (tarif preferensiyalari)',
     legal_basis_lex: 'https://lex.uz/docs/2876352',

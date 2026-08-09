@@ -118,7 +118,7 @@ for (const s of sections) {
 
 const doc = {
   meta: {
-    source: 'ichki manba baza, good jadvali',
+    source: 'ichki manba baza — bo'lim va guruh sarlavhalari',
     source_db_version: version,
     nomenclature: toLatin(String(root.title_uz || root.title || '')),
     extracted_at: new Date().toISOString().slice(0, 10),

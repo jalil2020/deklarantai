@@ -114,7 +114,7 @@ rules.sort((a, b) => (a.min < b.min ? -1 : a.min > b.min ? 1 : 0))
 
 const out = {
   meta: {
-    source: 'ichki manba baza',
+    source: 'ichki manba baza — hujjat talablari',
     script: 'tools/extract-docs.mjs',
     note: 'Kod oralig\'i bo\'yicha hujjat talablari. Bo\'limlar: litsenziya, ' +
       'sertifikat, imtiyoz, boshqa. Matn o\'zbekchasi bo\'lsa lotinlashtirilgan, ' +

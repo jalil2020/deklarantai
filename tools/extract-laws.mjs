@@ -295,7 +295,7 @@ if (args.dry) { db.close(); process.exit(0) }
 
 const out = {
   meta: {
-    source: 'ichki manba baza',
+    source: 'ichki manba baza — qonun matnlari',
     script: "lotin (rasmiy kirill matndan transliteratsiya qilingan)",
     selection: 'Bojxona kodeksi, ПКМ 55 (yig\'im stavkalari), ПКМ 347/358 '
       + '(utilizatsiya yig\'imi) to\'liq; Soliq/Ma\'muriy/Jinoyat kodekslari va '
