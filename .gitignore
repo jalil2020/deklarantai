@@ -55,3 +55,11 @@ backend/data/users.json.tmp
 # Dasturga KERAK EMAS: bu fayllar faqat hscodes.json ni yasash uchun
 # (tools/extract-hscodes.mjs). Ishlaydigan tizimga 16 MB JSON yetarli.
 backend/data/manba/
+
+# Yasaladigan ma'lumot bazalari — GITGA CHIQMAYDI.
+#
+# Ular tools/extract-*.mjs bilan manbadan qayta yasaladi
+# (manba sqlite va lex.uz). Repozitoriyada saqlash ikki sababga
+# ko'ra to'g'ri emas: hajm (24 MB) va kelib chiqishi — bular manba
+# bazasidan chiqarilgan.
+backend/data/*.json
