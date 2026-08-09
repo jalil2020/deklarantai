@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Kamera surati uchun yagona papka.
+
+  `cache-path` ATAYLAB: surat vaqtinchalik — u base64 ga o'girilgach
+  kerak emas. Tizim keshni o'zi tozalaydi, ya'ni foydalanuvchi
+  xotirasida axlat qolmaydi.
+-->
+<paths>
+    <cache-path name="camera" path="camera/" />
+</paths>

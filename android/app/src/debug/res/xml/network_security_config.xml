@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  FAQAT DEBUG. Mahalliy backend odatda HTTPS siz ishlaydi:
+
+    10.0.2.2:8080   — emulyatorda mezbon mashina
+    192.168.x.x     — LAN da haqiqiy telefon
+
+  IP DIAPAZONINI <domain> bilan berib bo'lmaydi (u nom bo'yicha
+  moslashtiradi, CIDR emas), shuning uchun debug da ruxsat umumiy.
+  Release da esa u butunlay yopiq.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

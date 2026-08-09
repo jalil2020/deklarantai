@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Belgi oq fonda chizilgan — adaptive ikonka foni ham oq bo'lishi
+         kerak, aks holda robot boshining ichki oq rangi fonga singib
+         ketadi. -->
+    <color name="ic_launcher_background">#FFFFFF</color>
+</resources>

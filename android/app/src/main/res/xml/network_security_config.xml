@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ISHLAB CHIQARISH (release) tarmoq siyosati: FAQAT HTTPS.
+
+  Bojxona qiymati, invoys raqamlari va tovar tavsifi shifrlanmagan
+  kanal orqali ketmasligi kerak.
+
+  Ishlab chiqish uchun bu fayl `src/debug` da qayta yozilgan — u yerda
+  mahalliy backend bilan HTTP ga ruxsat beriladi. Ikkiga bo'lish
+  ATAYLAB: bitta faylda "hozircha ruxsat" deb qoldirilsa, u release ga
+  ham o'tib ketardi.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+</network-security-config>

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      Compose o'z mavzusini chizadi; bu yerda faqat ilova ochilgunicha
+      ko'rinadigan tizim mavzusi kerak.
+    -->
+    <style name="Theme.Deklarant" parent="android:Theme.Material.Light.NoActionBar" />
+</resources>

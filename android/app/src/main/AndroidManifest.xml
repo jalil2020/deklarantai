@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Backend bilan aloqa uchun. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!--
+      Kamera MAJBURIY emas: kamerasiz qurilmada ham ilova o'rnatilsin —
+      foydalanuvchi rasmni galereyadan tanlaydi.
+
+      CAMERA RUXSATI ATAYLAB SO'RALMAYDI. Surat tizimning kamera ilovasi
+      orqali olinadi (ACTION_IMAGE_CAPTURE), u esa o'z ruxsati bilan
+      ishlaydi. Agar biz CAMERA ni e'lon qilsak, Android undan keyin
+      ruxsatni BIZDAN ham talab qilardi — foydasiz qo'shimcha so'rov.
+
+      Galereya ham ruxsatsiz: Photo Picker (PickVisualMedia) tizim
+      tanlagichi bo'lib, faqat tanlangan faylga kirish beradi.
+    -->
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+
+    <application
+        android:name=".DeklarantApp"
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:networkSecurityConfig="@xml/network_security_config"
+        android:theme="@style/Theme.Deklarant">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:windowSoftInputMode="adjustResize"
+            android:theme="@style/Theme.Deklarant">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!--
+          Kamera suratini saqlash uchun.
+
+          Kamera ilovasi bizning papkamizga YOZADI, shuning uchun unga
+          vaqtinchalik ruxsat kerak. To'g'ridan-to'g'ri file:// manzil
+          Android 7 dan boshlab taqiqlangan (FileUriExposedException),
+          FileProvider esa aynan shu bo'shliqni to'ldiradi.
+        -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+    </application>
+</manifest>
