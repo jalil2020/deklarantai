@@ -1,9 +1,30 @@
 import { useEffect, useRef, useState } from 'react'
 import { api, type ChatMessage, type ChatImage, type ChatMode } from '../api'
 import Markdown from './Markdown'
+import { LogoMark, MiniLogo } from './Logo'
+import { saveChat } from '../store'
 
 interface Props {
   aiAvailable: boolean
+  /**
+   * Tashqaridan (sidebar dan) kiritiladigan matn.
+   *
+   * Qiymat emas, HODISA sifatida ishlaydi: har safar yangi obyekt
+   * yuboriladi, shunda bir xil kod ketma-ket ikki marta tanlansa ham
+   * effekt qayta ishga tushadi.
+   */
+  inject?: { text: string; at: number }
+  /** Foydalanuvchi kirganmi — kirmagan bo'lsa chat yozishga yopiq. */
+  signedIn: boolean
+  /** Kirish oynasini ochadi. */
+  onNeedLogin: () => void
+  /**
+   * Tarixchadan ochilgan suhbat.
+   *
+   * `inject` kabi HODISA: bir xil suhbat ikki marta ochilsa ham
+   * qaytadan yuklanishi kerak.
+   */
+  restore?: { id: string; messages: ChatMessage[]; at: number }
 }
 
 const FLOAT_PROMPTS = [
@@ -18,109 +39,6 @@ const QUICK = [
 ]
 
 const MAX_EDGE = 1568
-
-// Robot boshi (logoga mos) — halqa/hujjatsiz, header va katta mascot uchun umumiy.
-function RobotHead() {
-  return (
-    <g>
-      {/* antenna */}
-      <line x1="130" y1="58" x2="130" y2="40" stroke="#2b3a55" strokeWidth="5" strokeLinecap="round" />
-      <circle cx="130" cy="34" r="9" fill="url(#dk-ball)" />
-      <circle cx="127" cy="31" r="3" fill="#bfe4ff" opacity="0.9" />
-      {/* ears */}
-      <rect x="60" y="96" width="22" height="42" rx="11" fill="url(#dk-body)" stroke="#e3e9f2" />
-      <rect x="178" y="96" width="22" height="42" rx="11" fill="url(#dk-body)" stroke="#e3e9f2" />
-      <circle cx="71" cy="117" r="6" fill="#2b3a55" opacity="0.85" />
-      <circle cx="189" cy="117" r="6" fill="#2b3a55" opacity="0.85" />
-      {/* head */}
-      <rect x="70" y="58" width="120" height="104" rx="42" fill="url(#dk-body)" stroke="#e3e9f2" strokeWidth="2" />
-      <ellipse cx="104" cy="86" rx="24" ry="14" fill="#ffffff" opacity="0.65" />
-      {/* face */}
-      <rect x="86" y="76" width="88" height="74" rx="30" fill="url(#dk-face)" />
-      {/* smiling eyes */}
-      <path d="M102 112 q10 -13 20 0" stroke="#2fd4f2" strokeWidth="6" strokeLinecap="round" fill="none" />
-      <path d="M138 112 q10 -13 20 0" stroke="#2fd4f2" strokeWidth="6" strokeLinecap="round" fill="none" />
-      {/* smile */}
-      <path d="M114 128 q16 17 32 0" stroke="#2fd4f2" strokeWidth="6" strokeLinecap="round" fill="none" />
-    </g>
-  )
-}
-
-// To'liq logo belgisi: robot + moviy halqa + hujjat (checkmark bilan).
-function LogoMark() {
-  return (
-    <svg className="logo-mark" viewBox="0 0 260 244" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-      <defs>
-        <linearGradient id="dk-ring" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="#37c0ff" />
-          <stop offset="1" stopColor="#2563eb" />
-        </linearGradient>
-        <linearGradient id="dk-body" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#ffffff" />
-          <stop offset="1" stopColor="#e0e8f3" />
-        </linearGradient>
-        <linearGradient id="dk-ball" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="#66ccff" />
-          <stop offset="1" stopColor="#2563eb" />
-        </linearGradient>
-        <radialGradient id="dk-face" cx="0.5" cy="0.4" r="0.85">
-          <stop offset="0" stopColor="#15233d" />
-          <stop offset="1" stopColor="#0a1220" />
-        </radialGradient>
-      </defs>
-      {/* moviy halqa */}
-      <circle cx="128" cy="118" r="96" stroke="url(#dk-ring)" strokeWidth="7" opacity="0.92" />
-      {/* yelka */}
-      <path d="M96 176 q34 -20 68 0 q10 6 10 20 h-88 q0 -14 10 -20 z" fill="url(#dk-body)" stroke="#e3e9f2" strokeWidth="2" />
-      <RobotHead />
-      {/* hujjat */}
-      <g transform="rotate(5 176 168)">
-        <rect x="150" y="120" width="74" height="90" rx="9" fill="#ffffff" stroke="#e3e9f2" strokeWidth="2" />
-        <path d="M206 120 h18 v18 z" fill="#2f8bff" />
-        <path d="M206 120 v18 h18" fill="none" stroke="#e3e9f2" strokeWidth="1.5" />
-        <rect x="162" y="140" width="30" height="6" rx="3" fill="#29abff" />
-        <rect x="162" y="154" width="48" height="4.5" rx="2.25" fill="#26324b" />
-        <rect x="162" y="165" width="48" height="4.5" rx="2.25" fill="#26324b" />
-        <rect x="162" y="176" width="34" height="4.5" rx="2.25" fill="#26324b" />
-        <circle cx="196" cy="192" r="13" fill="url(#dk-ball)" />
-        <path d="M190 192 l4 4 l8 -8" stroke="#ffffff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" fill="none" />
-      </g>
-    </svg>
-  )
-}
-
-// Kichik logo (header uchun): robot boshi + wordmark.
-function MiniLogo() {
-  return (
-    <div className="mini-logo">
-      <svg viewBox="46 24 168 148" className="mini-robot" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-        <defs>
-          <linearGradient id="dk-body-s" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stopColor="#ffffff" /><stop offset="1" stopColor="#e0e8f3" />
-          </linearGradient>
-          <linearGradient id="dk-ball-s" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0" stopColor="#66ccff" /><stop offset="1" stopColor="#2563eb" />
-          </linearGradient>
-          <radialGradient id="dk-face-s" cx="0.5" cy="0.4" r="0.85">
-            <stop offset="0" stopColor="#15233d" /><stop offset="1" stopColor="#0a1220" />
-          </radialGradient>
-        </defs>
-        <g>
-          <line x1="130" y1="58" x2="130" y2="40" stroke="#2b3a55" strokeWidth="5" strokeLinecap="round" />
-          <circle cx="130" cy="34" r="9" fill="url(#dk-ball-s)" />
-          <rect x="60" y="96" width="22" height="42" rx="11" fill="url(#dk-body-s)" />
-          <rect x="178" y="96" width="22" height="42" rx="11" fill="url(#dk-body-s)" />
-          <rect x="70" y="58" width="120" height="104" rx="42" fill="url(#dk-body-s)" stroke="#e3e9f2" strokeWidth="2" />
-          <rect x="86" y="76" width="88" height="74" rx="30" fill="url(#dk-face-s)" />
-          <path d="M102 112 q10 -13 20 0" stroke="#2fd4f2" strokeWidth="6" strokeLinecap="round" fill="none" />
-          <path d="M138 112 q10 -13 20 0" stroke="#2fd4f2" strokeWidth="6" strokeLinecap="round" fill="none" />
-          <path d="M114 128 q16 17 32 0" stroke="#2fd4f2" strokeWidth="6" strokeLinecap="round" fill="none" />
-        </g>
-      </svg>
-      <span className="wordmark sm">Deklarant <span className="wm-a">Ai</span></span>
-    </div>
-  )
-}
 
 function fileToImage(file: File): Promise<{ img: ChatImage; url: string }> {
   return new Promise((resolve, reject) => {
@@ -150,7 +68,7 @@ function fileToImage(file: File): Promise<{ img: ChatImage; url: string }> {
 
 interface Pending { img: ChatImage; url: string }
 
-export default function Chat({ aiAvailable }: Props) {
+export default function Chat({ aiAvailable, inject, restore, signedIn, onNeedLogin }: Props) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
   const [pending, setPending] = useState<Pending[]>([])
@@ -170,12 +88,44 @@ export default function Chat({ aiAvailable }: Props) {
   useEffect(() => {
     localStorage.setItem('mode', mode)
   }, [mode])
+
+  // Sidebar dan kelgan matnni maydonga qo'yamiz va fokusni beramiz.
+  //
+  // ATAYLAB YUBORMAYMIZ: foydalanuvchi savolni to'ldirishi kerak bo'lishi
+  // mumkin (qiymat, davlat, yil). Avtomatik yuborish uni yarim savol
+  // bilan javob olishga majbur qilardi.
+  useEffect(() => {
+    if (!inject) return
+    setInput(inject.text)
+    taRef.current?.focus()
+  }, [inject])
   const endRef = useRef<HTMLDivElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const taRef = useRef<HTMLTextAreaElement>(null)
   const recogRef = useRef<any>(null)
+  // Joriy suhbat IDsi. Yangi suhbat boshlanganda yasaladi, tarixchadan
+  // ochilganda esa o'shanikisi olinadi.
+  const chatId = useRef<string | null>(null)
 
   const empty = messages.length === 0
+
+  // Tarixchadan ochilgan suhbatni tiklaymiz va uning IDsini olamiz —
+  // davom ettirilsa yangi yozuv emas, o'shanisi yangilansin.
+  useEffect(() => {
+    if (!restore) return
+    chatId.current = restore.id
+    setMessages(restore.messages)
+  }, [restore])
+
+  // Suhbatni saqlash.
+  //
+  // Javob TUGAGANDA saqlaymiz: oqim davomida har bo'lakda yozish
+  // localStorage ga soniyasiga o'nlab marta murojaat qilardi.
+  useEffect(() => {
+    if (loading || messages.length === 0) return
+    chatId.current ??= String(Date.now())
+    saveChat(chatId.current, messages)
+  }, [messages, loading])
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -201,6 +151,9 @@ export default function Chat({ aiAvailable }: Props) {
 
   async function send(text: string, imgs: ChatImage[]) {
     const content = text.trim()
+    // Kirish tekshiruvi ENG BOSHIDA: hero'dagi taklif tugmalari ham
+    // shu yerdan o'tadi, ya'ni bitta joyda ushlanadi (DRY).
+    if (!signedIn) { onNeedLogin(); return }
     if ((!content && imgs.length === 0) || loading || !aiAvailable) return
     setError('')
     const next: ChatMessage[] = [...messages, { role: 'user', content, images: imgs.length ? imgs : undefined }]
@@ -286,7 +239,17 @@ export default function Chat({ aiAvailable }: Props) {
     r.start()
   }
 
-  const canSend = !loading && aiAvailable && (input.trim().length > 0 || pending.length > 0)
+  // Kirmagan foydalanuvchi uchun maydon YOPIQ, lekin ko'rinib turadi:
+  // ilova nima qila olishini ko'rmasdan kirishga majburlash — savolga
+  // javob bermasdan pul so'ragandek.
+  const locked = !signedIn
+  const canSend = !locked && !loading && aiAvailable &&
+    (input.trim().length > 0 || pending.length > 0)
+
+  /** Yopiq holatda har qanday urinish kirish oynasini ochadi. */
+  function guard(action: () => void) {
+    return () => (locked ? onNeedLogin() : action())
+  }
 
   return (
     <div
@@ -313,7 +276,7 @@ export default function Chat({ aiAvailable }: Props) {
             </button>
           </div>
           <div className="hero-brand">
-            <h1 className="wordmark">Deklarant <span className="wm-a">Ai</span></h1>
+            <h1 className="wordmark">Deklarant <span className="wm-a">AI</span></h1>
             <p className="tagline">Bojxona rasmiylashtiruvida aqlli yordamchingiz</p>
           </div>
         </div>
@@ -351,12 +314,17 @@ export default function Chat({ aiAvailable }: Props) {
       )}
 
       <div className="composer-card">
-        <div className={`composer-banner ${aiAvailable ? '' : 'warn'}`}>
+        <div className={`composer-banner ${aiAvailable && !locked ? '' : 'warn'}`}>
           <span className="cb-left">
-            {aiAvailable
-              ? <>✨ Kod, boj va qonunchilik bo'yicha yordam beraman</>
-              : <>⚠️ AI o'chirilgan — <code>ANTHROPIC_API_KEY</code> ni sozlang</>}
+            {locked
+              ? <>🔑 Chat uchun kirish kerak</>
+              : aiAvailable
+                ? <>✨ Kod, boj va qonunchilik bo'yicha yordam beraman</>
+                : <>⚠️ AI o'chirilgan — <code>ANTHROPIC_API_KEY</code> ni sozlang</>}
           </span>
+          {locked && (
+            <button className="banner-btn" type="button" onClick={onNeedLogin}>Kirish</button>
+          )}
           {/* Rejim tanlovi. Faqat javob uslubini o'zgartiradi —
               stavkalar va ogohlantirishlar ikkalasida bir xil. */}
           <div className="mode-switch" role="group" aria-label="Javob uslubi">
@@ -398,30 +366,47 @@ export default function Chat({ aiAvailable }: Props) {
           onChange={(e) => setInput(e.target.value)}
           onPaste={onPaste}
           onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit() } }}
-          placeholder="So'rov yozing yoki tovar / invoys rasmini yuklang..."
+          placeholder={locked
+            ? 'Savol berish uchun kiring — shu yerga bosing'
+            : "So'rov yozing yoki tovar / invoys rasmini yuklang..."}
           rows={1}
+          // `readOnly`, `disabled` EMAS: o'chirilgan maydon bosishni
+          // umuman qabul qilmaydi, ya'ni foydalanuvchi bosib ko'radi-yu
+          // hech narsa bo'lmaydi.
+          readOnly={locked}
+          onClick={locked ? onNeedLogin : undefined}
+          onFocus={locked ? onNeedLogin : undefined}
           disabled={loading}
         />
 
         <div className="composer-actions">
           <div className="chips">
-            <button className="chip" onClick={() => fileRef.current?.click()}>
+            <button className="chip" onClick={guard(() => fileRef.current?.click())}>
               <span className="chip-ic">📎</span> Rasm biriktirish
             </button>
             {QUICK.map((q) => (
-              <button key={q.label} className="chip" onClick={() => applyStarter(q.starter)}>
+              <button key={q.label} className="chip" onClick={guard(() => applyStarter(q.starter))}>
                 <span className="chip-ic">{q.icon}</span> {q.label}
               </button>
             ))}
           </div>
           <div className="send-group">
-            <button className={`round-btn mic ${listening ? 'on' : ''}`} onClick={toggleVoice} title="Ovozli kiritish" type="button">🎙️</button>
+            <button className={`round-btn mic ${listening ? 'on' : ''}`} onClick={guard(toggleVoice)} title="Ovozli kiritish" type="button">🎙️</button>
             {/* Javob oqayotganda yuborish o'rniga to'xtatish — uzun javob
                 kerak bo'lmay qolsa, foydalanuvchi kutib turmasin. */}
             {loading ? (
               <button className="round-btn stop" onClick={stop} title="To'xtatish" type="button">■</button>
             ) : (
-              <button className="round-btn send" onClick={() => submit()} disabled={!canSend} title="Yuborish" type="button">➤</button>
+              <button
+                className="round-btn send"
+                onClick={guard(() => submit())}
+                // Yopiq holatda tugma FAOL qoladi: bosilganda kirish
+                // oynasi ochiladi. O'chirilgan tugma esa hech nima
+                // demasdan jim turardi.
+                disabled={locked ? false : !canSend}
+                title={locked ? 'Kirish' : 'Yuborish'}
+                type="button"
+              >➤</button>
             )}
           </div>
         </div>

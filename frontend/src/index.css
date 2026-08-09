@@ -13,6 +13,7 @@
   --danger: #ef4444;
   --shadow: 0 20px 48px -22px rgba(37, 99, 235, 0.35);
   --shadow-sm: 0 8px 20px -10px rgba(37, 99, 235, 0.28);
+  --nav-w: 232px;
 }
 
 html, body { height: 100%; }
