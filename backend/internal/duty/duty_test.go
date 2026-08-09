@@ -160,7 +160,7 @@ func TestFeeScaleText(t *testing.T) {
 	}
 }
 
-// Rasmiy manba kalkulyatori natijasi bilan solishtirish.
+// Rasmiy rasmiy kalkulyator natijasi bilan solishtirish.
 //
 // Manba: dasturning ekrani, kod 3001209000, hisob sanasi 19.07.2026.
 // Kiritilgan: faktura 1 230 000 USD, transport 25 000 USD, kurs 12 093,35,
@@ -178,7 +178,7 @@ func TestFeeScaleText(t *testing.T) {
 //  2. QQS bazasiga bojxona yig'imi KIRMASLIGI (SK 254-modda). Agar yig'im
 //     bazaga qo'shilsa, QQS 1 822 494 510 chiqardi — ya'ni 1 236 000 so'm
 //     ortiq. Rasmiy dastur ham yig'imni bazaga qo'shmaydi.
-func TestReferenceReferenceCase(t *testing.T) {
+func TestOfficialReferenceCase(t *testing.T) {
 	const rate = 12_093.35
 	r := Calculate(Request{
 		Date:         testDate,

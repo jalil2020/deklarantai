@@ -59,7 +59,7 @@ export const LEX_LINKS = [
     date: '20.08.2021', url: 'https://lex.uz/docs/5592823' },  // ПКМ 531
 
   // --- Boj stavkalari ---
-  // ПП-3818 — import boji stavkalari (1-ilova). manba kalkulyatori ham
+  // ПП-3818 — import boji stavkalari (1-ilova). rasmiy kalkulyator ham
   // "20. Там. пошлина" yonida aynan shu hujjatga havola qiladi.
   { name: /упорядочению внешнеэкономической деятельности и совершенствованию системы таможенно/i,
     date: '29.06.2018', url: 'https://lex.uz/docs/3802366' },

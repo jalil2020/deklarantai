@@ -1,6 +1,6 @@
 // Package hscode TIF TN (TN VED) kodlar bazasini yuklaydi va qidiruvni ta'minlaydi.
 //
-// Baza tools/extract-hscodes.mjs orqali manba manbasidan generatsiya qilinadi.
+// Baza tools/extract-hscodes.mjs orqali manba bazasidan generatsiya qilinadi.
 // Fayl formati: {"meta": {...}, "codes": [...]}
 package hscode
 

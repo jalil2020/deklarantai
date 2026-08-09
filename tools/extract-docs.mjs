@@ -6,7 +6,7 @@
 //   OnlineTnvedInfo     — talab TURI: tavsifi, qaysi rejimga tegishli, imtiyoz bayroqlari
 //   OnlineTnvedInfoItem — KOD ORALIQLARI: qaysi kodlarga qaysi talab, qonun va amal muddati
 //
-// Bo'limlar manba dagi kabi (DocType):
+// Bo'limlar manbadagi kabi (DocType):
 //   Licence     → litsenziya
 //   Certificate → sertifikat
 //   Facility    → imtiyoz (IsFree* bayroqlari qaysi to'lovdan ozod qilishni ko'rsatadi)

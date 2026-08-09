@@ -14,7 +14,7 @@ func load(t *testing.T) *Store {
 	return s
 }
 
-// manba ekranidagi "Необходимые документы" bo'limini takrorlash.
+// rasmiy kalkulyator ekranidagi "Необходимые документы" bo'limini takrorlash.
 //
 // Kod 3001209000 uchun dastur ko'rsatgan:
 //
