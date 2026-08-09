@@ -27,10 +27,25 @@ func newServerWithRates(t *testing.T, cbuURL string) http.Handler {
 	return buildServer(t, "", "", rates.New(cbuURL))
 }
 
+// testClientKey — testlarda mijoz belgisi. Chat endpointlari tanilgan
+// mijozni talab qiladi; tanilmagan holat auth_test.go da tekshiriladi.
+const testClientKey = "test-mijoz-siri"
+
 func buildServer(t *testing.T, apiKey, aiURL string, rateClient *rates.Client) http.Handler {
+	return buildServerObj(t, apiKey, aiURL, rateClient).Routes()
+}
+
+// newServerObj — Routes() emas, Server ning O'ZI kerak bo'lganda
+// (masalan SetUsers chaqirish uchun).
+func newServerObj(t *testing.T, apiKey, aiURL string) *Server {
+	return buildServerObj(t, apiKey, aiURL, nil)
+}
+
+func buildServerObj(t *testing.T, apiKey, aiURL string, rateClient *rates.Client) *Server {
 	t.Helper()
 	t.Setenv("ANTHROPIC_API_KEY", apiKey)
 	t.Setenv("ANTHROPIC_API_URL", aiURL)
+	t.Setenv("API_KEYS", "test:"+testClientKey)
 
 	codes, err := hscode.Load("../../data/hscodes.json")
 	if err != nil {
@@ -49,7 +64,7 @@ func buildServer(t *testing.T, apiKey, aiURL string, rateClient *rates.Client) h
 		t.Fatal(err)
 	}
 	client := llm.New()
-	return New(codes, lawStore, chat.New(client, codes, lawStore, docStore, nil), client, countryStore, rateClient, docStore).Routes()
+	return New(codes, lawStore, chat.New(client, codes, lawStore, docStore, nil), client, countryStore, rateClient, docStore)
 }
 
 // do — so'rov yuboradi va javobni qaytaradi.
@@ -62,6 +77,7 @@ func do(t *testing.T, h http.Handler, method, path, body string) (*httptest.Resp
 		r = httptest.NewRequest(method, path, strings.NewReader(body))
 		r.Header.Set("Content-Type", "application/json")
 	}
+	r.Header.Set(clientHeader, testClientKey)
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, r)
 
@@ -712,5 +728,34 @@ func TestExemptionsByCode(t *testing.T) {
 	_, out2 := do(t, h, http.MethodGet, "/api/exemptions?code=3001209000", "")
 	if free2, _ := out2["free"].([]any); len(free2) > 0 {
 		t.Logf("3001209000 uchun imtiyoz: %v (tekshiring)", free2)
+	}
+}
+
+// Taklif ro'yxati uchun natijalar sonini oshirish mumkin bo'lishi kerak:
+// kod terilayotganda 5 ta variant kamlik qiladi.
+func TestHSSearchLimit(t *testing.T) {
+	h := newServer(t, "", "")
+
+	count := func(body string) int {
+		w, out := do(t, h, http.MethodPost, "/api/hscode/search", body)
+		wantStatus(t, w, http.StatusOK, "qidiruv "+body)
+		m, _ := out["matches"].([]any)
+		return len(m)
+	}
+
+	// Sukut — 5.
+	if n := count(`{"query":"8703"}`); n != 5 {
+		t.Errorf("sukut chegara: %d natija; 5 kutilgan", n)
+	}
+	if n := count(`{"query":"8703","limit":12}`); n != 12 {
+		t.Errorf("limit=12: %d natija", n)
+	}
+	// Yuqori chegara — butun bazani tortib bo'lmasin.
+	if n := count(`{"query":"8703","limit":500}`); n != 20 {
+		t.Errorf("limit=500: %d natija; 20 ga kesilishi kerak", n)
+	}
+	// Manfiy yoki nol — sukutga qaytadi.
+	if n := count(`{"query":"8703","limit":0}`); n != 5 {
+		t.Errorf("limit=0: %d natija; 5 kutilgan", n)
 	}
 }

@@ -239,3 +239,140 @@ func TestSessionTokensUnique(t *testing.T) {
 		seen[tok] = true
 	}
 }
+
+// ---------------------------------------------------------------- sozlamalar
+
+// Sozlamalar endpointi sessiyasiz ochilmasligi kerak.
+func TestAdminSettingsNeedsSession(t *testing.T) {
+	h := adminServer(t, "maxfiy")
+	w, _ := do(t, h, http.MethodGet, "/admin/api/settings", "")
+	wantStatus(t, w, http.StatusUnauthorized, "sozlamalar sessiyasiz")
+}
+
+// ENG MUHIM TEST: maxfiy qiymat javobda HECH QACHON bo'lmasligi kerak.
+//
+// Panel parol bilan himoyalangan bo'lsa ham, kalitni JSON ga chiqarish
+// uni tarqatish uchun yana bir kanal ochib berardi — brauzer tarixi,
+// proksi jurnali, ekran surati.
+func TestAdminSettingsNeverLeaksSecrets(t *testing.T) {
+	const key = "sk-ant-JUDA-MAXFIY-KALIT"
+	t.Setenv("ANTHROPIC_API_KEY", key)
+	t.Setenv("GLM_API_KEY", "glm-MAXFIY-KALIT")
+	h := adminServer(t, "parol-MAXFIY-12345")
+	c := login(t, h, "parol-MAXFIY-12345")
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/admin/api/settings", nil)
+	r.AddCookie(c)
+	h.ServeHTTP(w, r)
+	wantStatus(t, w, http.StatusOK, "sozlamalar")
+
+	body := w.Body.String()
+	for _, secret := range []string{key, "glm-MAXFIY-KALIT", "parol-MAXFIY-12345", "MAXFIY"} {
+		if strings.Contains(body, secret) {
+			t.Errorf("javobda maxfiy qiymat chiqib ketdi: %q", secret)
+		}
+	}
+	// Lekin holati ko'rinishi kerak.
+	if !strings.Contains(body, "ANTHROPIC_API_KEY") {
+		t.Error("sozlama nomi ham yo'q — ro'yxat bo'sh")
+	}
+}
+
+// Sozlangan/sozlanmagan holati to'g'ri aks etishi kerak.
+func TestAdminSettingsReportsState(t *testing.T) {
+	t.Setenv("ANTHROPIC_API_KEY", "bor")
+	t.Setenv("GLM_API_KEY", "") // yo'q
+	t.Setenv("ANTHROPIC_MODEL", "maxsus-model")
+
+	got := map[string]setting{}
+	for _, s := range settings() {
+		got[s.Name] = s
+	}
+	if !got["ANTHROPIC_API_KEY"].Set {
+		t.Error("o'rnatilgan kalit 'sozlanmagan' deb ko'rsatildi")
+	}
+	if got["ANTHROPIC_API_KEY"].Value != "" {
+		t.Error("maxfiy sozlamaning qiymati to'ldirilgan")
+	}
+	if got["GLM_API_KEY"].Set {
+		t.Error("o'rnatilmagan kalit 'sozlangan' deb ko'rsatildi")
+	}
+	// Muhitdan kelgan qiymat va uning manbasi.
+	if got["ANTHROPIC_MODEL"].Value != "maxsus-model" || got["ANTHROPIC_MODEL"].Source != "muhit" {
+		t.Errorf("muhit qiymati noto'g'ri: %+v", got["ANTHROPIC_MODEL"])
+	}
+	// O'rnatilmagan sozlama sukut qiymatini ko'rsatishi kerak.
+	if got["PORT"].Value != "8080" || got["PORT"].Source != "sukut" {
+		t.Errorf("sukut qiymati noto'g'ri: %+v", got["PORT"])
+	}
+}
+
+// Ogohlantirishlar xavfli holatni aytishi kerak.
+func TestSettingsWarnings(t *testing.T) {
+	t.Setenv("ANTHROPIC_API_KEY", "")
+	t.Setenv("GLM_ENABLED", "")
+	t.Setenv("TRUST_PROXY", "1")
+	t.Setenv("ADMIN_PASSWORD", "qisqa")
+
+	joined := strings.Join(settingsWarnings(), " | ")
+	for _, want := range []string{"ANTHROPIC_API_KEY", "TRUST_PROXY", "qisqa"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("ogohlantirishda %q yo'q:\n%s", want, joined)
+		}
+	}
+	// GLM o'chiq bo'lishi NORMAL holat — bu haqda ogohlantirmaslik kerak.
+	if strings.Contains(joined, "GLM") {
+		t.Errorf("GLM o'chiqligi haqida keraksiz ogohlantirish:\n%s", joined)
+	}
+}
+
+// GLM YOQILGANI ogohlantirilishi kerak.
+//
+// Javob boshqa provayderdan kelayotgani ko'rinib turishi shart: bu
+// xarajat masalasi emas, javob sifati va yuridik mas'uliyat masalasi.
+func TestSettingsWarnsWhenGLMEnabled(t *testing.T) {
+	t.Setenv("ANTHROPIC_API_KEY", "k")
+	t.Setenv("GLM_ENABLED", "1")
+	t.Setenv("GLM_API_KEY", "g")
+
+	joined := strings.Join(settingsWarnings(), " | ")
+	if !strings.Contains(joined, "GLM yoqilgan") {
+		t.Errorf("GLM yoqilgani haqida ogohlantirish yo'q:\n%s", joined)
+	}
+}
+
+// Yarim sozlangan holat ham aytilishi kerak.
+func TestSettingsWarnsGLMEnabledWithoutKey(t *testing.T) {
+	t.Setenv("ANTHROPIC_API_KEY", "k")
+	t.Setenv("GLM_ENABLED", "1")
+	t.Setenv("GLM_API_KEY", "")
+
+	joined := strings.Join(settingsWarnings(), " | ")
+	if !strings.Contains(joined, "GLM_API_KEY yo'q") {
+		t.Errorf("kalitsiz yoqilgani aytilmadi:\n%s", joined)
+	}
+}
+
+// Registr to'liq bo'lishi kerak: kodda o'qiladigan har bir muhit
+// o'zgaruvchisi panelda ko'rinsin, aks holda panel yolg'on to'liqlik
+// taassurotini beradi.
+func TestSettingsRegistryCoversKnownVars(t *testing.T) {
+	inRegistry := map[string]bool{}
+	for _, d := range settingsRegistry {
+		inRegistry[d.name] = true
+	}
+	for _, name := range []string{
+		"ANTHROPIC_API_KEY", "ANTHROPIC_MODEL", "ANTHROPIC_FAST_MODEL",
+		"ANTHROPIC_API_URL", "ANTHROPIC_MAX_TOKENS",
+		"GLM_API_KEY", "GLM_MODEL", "GLM_API_URL", "GLM_TIMEOUT_SECONDS",
+		"RATE_PER_MIN", "DAILY_QUOTA", "MAX_BODY_BYTES", "TRUST_PROXY",
+		"PORT", "ADMIN_PASSWORD",
+		"HSCODE_DATA", "LAWS_DATA", "DOCS_DATA", "COUNTRIES_DATA",
+		"CBU_API_URL", "CONTACT_TELEGRAM",
+	} {
+		if !inRegistry[name] {
+			t.Errorf("%s registrda yo'q — panelda ko'rinmaydi", name)
+		}
+	}
+}

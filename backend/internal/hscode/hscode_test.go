@@ -269,3 +269,105 @@ func TestUnitWordsDoNotDominate(t *testing.T) {
 		t.Error("oddiy so'rov buzildi")
 	}
 }
+
+// 8705 (maxsus avtotransport) — nomenklatura lug'at bo'shlig'i.
+//
+// Bazada 8705 tavsifida "musor"/"мусор" so'zi UMUMAN yo'q, shuning uchun
+// "musor tashuvchi mashina" so'rovi 8433 (qishloq xo'jaligi mashinalari)
+// ni birinchi qilgan edi. Bu real hujjatda (musor tashish mashinasi
+// fotosuratida) aniqlangan: dastur 30% o'rniga 0–5% boj ko'rsatardi.
+func TestSpecialVehiclePhrases(t *testing.T) {
+	s := load(t)
+	for _, q := range []string{
+		"Dongfeng musor tashuvchi mashina, 3 dona, Xitoydan, 2024-yil",
+		"musor tashish mashinasi bojini hisobla",
+		"axlat mashinasi import qilsam qancha to'lov",
+		"yo'l tozalash mashinasi",
+	} {
+		got := s.Search(q, 5)
+		if len(got) == 0 || !strings.HasPrefix(got[0].Code.Code, "8705") {
+			var codes []string
+			for _, m := range got {
+				codes = append(codes, m.Code.Code)
+			}
+			t.Errorf("%q:\n  kutilgan 8705… birinchi o'rinda\n  olingan: %v", q, codes)
+		}
+	}
+}
+
+// Ibora sinonimlari boshqa tovarlarni 8705 ga burib yubormasligi kerak.
+// "chiqindi" atayin sinonim ro'yxatiga KIRITILMAGAN — aks holda plastik
+// chiqindi so'rovi maxsus avtotransportga aylanib qolardi.
+func TestSpecialVehicleNoRegression(t *testing.T) {
+	s := load(t)
+	cases := []struct{ query, wantPrefix string }{
+		{"plastik chiqindi import qilsam qancha to'lov chiqadi", "39"},
+		{"muzlatgich import qilsam qancha to'lov chiqadi", "8418"},
+		{"10 000 dollarlik traktor import qilsam qancha to'lov chiqadi", "8701"},
+	}
+	for _, c := range cases {
+		got := s.Search(c.query, 5)
+		if len(got) == 0 {
+			t.Errorf("%q: hech narsa topilmadi", c.query)
+			continue
+		}
+		if !strings.HasPrefix(got[0].Code.Code, c.wantPrefix) {
+			t.Errorf("%q: birinchi %s; %s… kutilgan (8705 ga burilib ketdi?)",
+				c.query, got[0].Code.Code, c.wantPrefix)
+		}
+	}
+}
+
+// Qaratqich "-i" — undoshdan keyin kesiladi, unlidan keyin yo'q.
+//
+// NEGA TEST: bu qoida qidiruvning eng nozik joyi. Shartsiz kesilsa asl
+// so'zlar yeyiladi ("dori" → "dor"), umuman kesilmasa esa o'zbekcha
+// tovar nomlarining ko'pchiligi topilmaydi ("havo konditsioneri").
+func TestStripIzafat(t *testing.T) {
+	cases := []struct{ in, want string }{
+		// undoshdan keyin — kesiladi
+		{"konditsioneri", "konditsioner"},
+		{"apparati", "apparat"},
+		{"dvigateli", "dvigatel"},
+		// unlidan keyin qo'shimcha "-si" bo'ladi, yalang "-i" emas
+		{"dori", "dori"},
+		{"kaliy", "kaliy"},
+		// juda qisqa — o'zak qolmaydi
+		{"kali", "kali"},
+		{"eshigi", "eshig"},
+		// "-i" bilan tugamaydi
+		{"noutbuk", "noutbuk"},
+		// ro'yxatdagi qo'shimcha ustun turadi
+		{"mashinasi", "mashina"},
+		{"chiroqlar", "chiroq"},
+	}
+	for _, c := range cases {
+		if got := stripUzSuffix(c.in); got != c.want {
+			t.Errorf("stripUzSuffix(%q) = %q; %q kutilgan", c.in, got, c.want)
+		}
+	}
+}
+
+// Jonli sinovda yiqilgan aniq holat.
+func TestSearchFindsConditioner(t *testing.T) {
+	s, err := Load("../../data/hscodes.json")
+	if err != nil {
+		t.Skip("baza yo'q:", err)
+	}
+	for _, q := range []string{"havo konditsioneri", "konditsioner"} {
+		got := s.Search(q, 5)
+		found := false
+		for _, m := range got {
+			if strings.HasPrefix(m.Code.Code, "8415") {
+				found = true
+			}
+		}
+		if !found {
+			first := "—"
+			if len(got) > 0 {
+				first = got[0].Code.Code
+			}
+			t.Errorf("%q: 8415 top-5 da yo'q (birinchi: %s)", q, first)
+		}
+	}
+}

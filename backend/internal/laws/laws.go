@@ -167,6 +167,33 @@ func (s *Store) Search(query string, limit int) []Match {
 	return out
 }
 
+// ⚠️ AHAMIYATLILIK CHEGARASI SINAB KO'RILDI VA OLIB TASHLANDI.
+// Qayta urinilmasin.
+//
+// Fikr shunday edi: moslik SO'Z ICHIDAN topiladi ("salom" ⊂
+// "salomatlik", "yaxshi" ⊂ "yaxshilash"), shuning uchun salomlashish
+// ham uchta qonun parchasini tortib kelardi — buni ball chegarasi
+// (16) bilan kesaylik.
+//
+// Kichik namunada ajratish chiroyli ko'ringan edi (shovqin 13–14,5;
+// haqiqiy so'rov 18,5–23,7). Keng o'lchovda (78 ta haqiqiy so'rov)
+// to'plamlar USTMA-UST tushdi:
+//
+//	12,79  HAQIQIY  "jarima"              → 309²-modda
+//	11,46  HAQIQIY  "bojxona jarimasi"    → 309²-modda
+//	14,50  shovqin  "nima qila olasan"
+//	13,22  shovqin  "salom"
+//
+// Ya'ni deklarant uchun eng muhim savollardan biri — JARIMA — shovqindan
+// ham past ball oladi. Chegara bilan u qonun kontekstini BUTUNLAY
+// yo'qotardi va model jarima haqida bazaga tayanmasdan javob berardi.
+// Jami 78 so'rovdan 4 tasi kontekstsiz qolgan, 8 tasi qisman kesilgan.
+//
+// Sabab: BM25 balli so'rov uzunligi va korpusdagi chastotaga bog'liq,
+// ya'ni "ahamiyatlilik" o'lchovi emas. Chinakam yechim — embedding
+// qidiruvi. Shovqin masalasi esa boshqa joyda hal qilinadi: bo'sh gap
+// modelni tanlashda `smallTalk` orqali ajratiladi (chat paketi).
+
 // uniqueTerms — so'rovdan mazmunli so'zlarni ajratadi (qisqa so'zlar tashlanadi).
 func uniqueTerms(q string) []string {
 	seen := map[string]bool{}

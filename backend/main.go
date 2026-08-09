@@ -14,6 +14,7 @@ import (
 	"deklarant-ai/backend/internal/laws"
 	"deklarant-ai/backend/internal/llm"
 	"deklarant-ai/backend/internal/rates"
+	"deklarant-ai/backend/internal/users"
 )
 
 func main() {
@@ -67,13 +68,47 @@ func main() {
 
 	llmClient := llm.New()
 	if llmClient.Available() {
-		log.Printf("AI yoqilgan (Claude)")
+		log.Printf("AI yoqilgan (Claude) — rasm va hisob-kitob")
+		// Amaldagi darajalar OCHIQ ko'rsatiladi: model jimgina
+		// almashib qolmasin (llm.Tiers izohiga qarang).
+		log.Printf("Modellar — %s", llmClient.Tiers())
 	} else {
 		log.Printf("AI o'chirilgan: ANTHROPIC_API_KEY sozlanmagan (chat ishlamaydi)")
+	}
+	// Arzon provayder SUKUT BO'YICHA O'CHIQ. Yoqilgani jurnalda ochiq
+	// ko'rinishi kerak — javob boshqa modeldan kelayotgani sezilmay
+	// qolmasin.
+	if llmClient.GLMAvailable() {
+		log.Printf("⚠️ Arzon provayder YOQILGAN (%s) — ma'lumot savollariga javobni Claude emas, o'sha model beradi", llmClient.GLMModel())
+	} else {
+		log.Printf("Hamma so'rov Claude da (GLM o'chiq)")
 	}
 
 	chatSvc := chat.New(llmClient, codes, lawStore, docStore, rateClient)
 	srv := api.New(codes, lawStore, chatSvc, llmClient, countryStore, rateClient, docStore)
+
+	// Foydalanuvchilar. Fayl bo'lmasa bo'sh ombor yaratiladi —
+	// birinchi ro'yxatdan o'tish uni o'zi yozadi.
+	userStore, err := users.Load(getenv("USERS_DATA", "data/users.json"))
+	if err != nil {
+		log.Fatalf("Foydalanuvchilar omborini o'qib bo'lmadi: %v", err)
+	}
+	srv.SetUsers(userStore)
+	if n := userStore.Count(); n == 0 {
+		log.Printf("Foydalanuvchilar: 0 — birinchi ro'yxatdan o'tuvchi ADMIN rolini ola oladi")
+	} else {
+		log.Printf("Foydalanuvchilar: %d ta", n)
+	}
+
+	// Ierarxiya sarlavhalari — brauzer (sidebar) uchun. Ixtiyoriy:
+	// bo'lmasa brauzer raqamlarni ko'rsatadi, ishlashdan to'xtamaydi.
+	if tax, err := hscode.LoadTaxonomy(getenv("TAXONOMY_DATA", "data/taxonomy.json")); err != nil {
+		log.Printf("Taksonomiya yuklanmadi: %v — brauzer sarlavhasiz ishlaydi", err)
+	} else {
+		tm := tax.Meta()
+		log.Printf("Taksonomiya: %d bo'lim, %d guruh", tm.Sections, tm.Groups)
+		srv.SetTaxonomy(tax)
+	}
 
 	// Har so'rovning token sarfini jurnalga yozamiz va admin statistikasiga
 	// qo'shamiz — xarajatni ko'rmasdan boshqarib bo'lmaydi. cache_read nolga

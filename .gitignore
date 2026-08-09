@@ -9,9 +9,13 @@ backend/deklarant-ai.exe
 backend/main
 backend/main.exe
 
-# Manba bazalari (manba) — ~295 MB, git'ga tushmasin.
-# Bulardan hscodes.json generatsiya qilinadi; faqat natija commit qilinadi.
-backend/data/manba/
+# Manba bazalari (manba) — ~295 MB.
+# .sqlite fayllari Git LFS orqali saqlanadi (.gitattributes ga qara).
+# SQLite ning o'tkinchi jurnal fayllari esa git'ga tushmaydi — ular
+# baza ochilganda paydo bo'ladigan vaqtinchalik holat.
+backend/data/manba/*.sqlite-shm
+backend/data/manba/*.sqlite-wal
+backend/data/manba/*.sqlite-journal
 
 # Muhit
 .env
@@ -22,3 +26,32 @@ backend/data/manba/
 .idea/
 .DS_Store
 Thumbs.db
+
+
+# Android (Gradle) — qurish natijalari va mahalliy sozlamalar.
+# Loyihaning o'zi (app/src, gradle skriptlari) git'da qoladi.
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/.idea/
+android/.kotlin/
+*.apk
+*.aab
+*.keystore
+
+# Foydalanuvchilar — parol xeshlari va shaxsiy ma'lumot (telefon raqami).
+# HECH QACHON repozitoriyga tushmasin.
+backend/data/users.json
+backend/data/users.json.tmp
+
+# manba manba bazasi — HECH QACHON commit qilinmaydi.
+#
+# ⚠️ Bu fayllarda HAQIQIY uchinchi tomon ma'lumoti bor: real
+# deklaratsiyalar, kompaniya nomlari, 4 670 ta noyob STIR raqami va
+# 42 ta telefon raqami (DECLARATION, people, banks jadvallari).
+# Ular bizniki emas va nashr qilinmaydi.
+#
+# Dasturga KERAK EMAS: bu fayllar faqat hscodes.json ni yasash uchun
+# (tools/extract-hscodes.mjs). Ishlaydigan tizimga 16 MB JSON yetarli.
+backend/data/manba/

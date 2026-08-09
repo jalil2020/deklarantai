@@ -62,10 +62,18 @@ func newLimiter() *limiter {
 	}
 }
 
-// allow — so'rovga ruxsat berilishini tekshiradi.
-// Qaytaradi: ruxsat, sabab (rad etilganda) va kutish kerak bo'lgan soniya.
-func (l *limiter) allow(ip string) (bool, string, int) {
-	if l.ratePerMin <= 0 && l.dailyQuota <= 0 {
+// allow — so'rovga ruxsat berilishini tekshiradi (umumiy kunlik kvota).
+func (l *limiter) allow(key string) (bool, string, int) {
+	return l.allowQuota(key, l.dailyQuota)
+}
+
+// allowQuota — kunlik kvota ALOHIDA berilganda.
+//
+// NEGA KERAK: kirgan foydalanuvchining kvotasi rolga bog'liq
+// (tadbirkor 30, deklarant 200, inspektor 300). Umumiy IP chegarasi
+// esa faqat kirmagan mijozlar uchun qoladi.
+func (l *limiter) allowQuota(key string, dailyQuota int) (bool, string, int) {
+	if l.ratePerMin <= 0 && dailyQuota <= 0 {
 		return true, "", 0
 	}
 	now := l.now()
@@ -85,10 +93,10 @@ func (l *limiter) allow(ip string) (bool, string, int) {
 		l.cleanupLocked(now)
 	}
 
-	c := l.seen[ip]
+	c := l.seen[key]
 	if c == nil {
 		c = &counter{}
-		l.seen[ip] = c
+		l.seen[key] = c
 	}
 	if !c.minute.Equal(minute) {
 		c.minute, c.inMinute = minute, 0
@@ -97,7 +105,7 @@ func (l *limiter) allow(ip string) (bool, string, int) {
 		c.day, c.inDay = day, 0
 	}
 
-	if l.dailyQuota > 0 && c.inDay >= l.dailyQuota {
+	if dailyQuota > 0 && c.inDay >= dailyQuota {
 		// Kun oxirigacha qancha qolganini aytamiz — foydalanuvchi qachon
 		// qayta urinishni bilsin.
 		wait := int(day.Add(24 * time.Hour).Sub(now).Seconds())
@@ -168,7 +176,38 @@ func (s *Server) withLimits(next http.Handler) http.Handler {
 			r.Body = http.MaxBytesReader(w, r.Body, maxBody)
 		}
 
-		if strings.HasPrefix(r.URL.Path, "/api/chat") {
+		// Chat — kirgan foydalanuvchi bo'lsa kvota UNGA bog'lanadi.
+		//
+		// NEGA MUHIM: ilgari limit IP bo'yicha edi, ya'ni bitta ofisdagi
+		// yigirma kishi bir-birining kvotasini yeb qo'yardi, mobil
+		// tarmoqdagi odam esa IP almashtirib chegarani aylanib o'tardi.
+		// Foydalanuvchi belgisi ikkalasini ham hal qiladi.
+		//
+		// /api/session va /api/auth/* IP bo'yicha qoladi: u yerda hali
+		// foydalanuvchi yo'q, va tokenni cheksiz yasab olish mumkin
+		// bo'lmasligi kerak.
+		switch {
+		case strings.HasPrefix(r.URL.Path, "/api/chat"):
+			key, quota := clientIP(r, trustProxy), s.limiter.dailyQuota
+			if c, ok := s.identify(r); ok && c.user != nil {
+				key, quota = c.name, c.user.Role.DailyQuota()
+			}
+			if ok, reason, wait := s.limiter.allowQuota(key, quota); !ok {
+				w.Header().Set("Retry-After", strconv.Itoa(wait))
+				writeErr(w, http.StatusTooManyRequests, reason)
+				return
+			}
+		// FAQAT parol qabul qiladigan yo'llar cheklanadi — ular
+		// parolni taxmin qilish uchun ishlatiladi.
+		//
+		// `me` va `logout` ATAYLAB cheklanmaydi: ular amaldagi tokenni
+		// talab qiladi, ya'ni taxmin qilinadigan narsa yo'q. Cheklansa,
+		// sahifani bir necha marta yangilagan foydalanuvchi 429 olardi
+		// (ilova har ochilishida `me` ni so'raydi), parolni 10 marta
+		// xato terganu chiqa olmay qolgan odam esa qamalib qolardi.
+		case r.URL.Path == "/api/session" ||
+			r.URL.Path == "/api/auth/login" ||
+			r.URL.Path == "/api/auth/register":
 			if ok, reason, wait := s.limiter.allow(clientIP(r, trustProxy)); !ok {
 				w.Header().Set("Retry-After", strconv.Itoa(wait))
 				writeErr(w, http.StatusTooManyRequests, reason)

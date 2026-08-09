@@ -36,7 +36,7 @@ type Meta struct {
 	// bu yerda aks etmagan.
 	VATNote string `json:"vat_note,omitempty"`
 
-	ExciseKnownCodes int    `json:"excise_known_codes"`
+	ExciseKnownCodes int `json:"excise_known_codes"`
 }
 
 // Code — bitta tovar nomenklatura yozuvi.
@@ -59,6 +59,17 @@ type Code struct {
 	ExportDuty float64 `json:"export_duty"`
 	VAT        float64 `json:"vat"`
 	DutyLaw    string  `json:"duty_law,omitempty"`
+
+	// KOMBINATSIYALANGAN STAVKA — 1 555 kodda (13 142 dan).
+	//
+	// "10%, lekin 1 kg uchun 0,5 dollardan kam bo'lmagan" ko'rinishidagi
+	// stavkaning qat'iy qismi: dollarda, bitta birlik uchun.
+	// Birlik — ImportDutySpecificUnit (kg, dona, l, juft, m²).
+	//
+	// nil = qat'iy qism YO'Q. 0 deb yozib qo'yish uni "0 dollar" bilan
+	// aralashtirib yuborardi.
+	ImportDutySpecific     *float64 `json:"import_duty_specific,omitempty"`
+	ImportDutySpecificUnit string   `json:"import_duty_specific_unit,omitempty"`
 
 	// Excise — aksiz stavkasi, foizda.
 	//
@@ -175,6 +186,7 @@ func (s *Store) Search(query string, limit int) []Match {
 	}
 
 	terms := contentTerms(strings.Fields(q))
+	terms = appendPhraseTerms(terms, q)
 	if len(terms) == 0 {
 		return nil
 	}
@@ -189,6 +201,33 @@ func (s *Store) Search(query string, limit int) []Match {
 	sortMatches(matches)
 	return trim(matches, limit)
 }
+
+// ⚠️ AHAMIYATLILIK CHEGARASI BU YERDA MUMKIN EMAS — sinab ko'rilgan va
+// O'LCHOV BILAN RAD ETILGAN. Qayta urinilmasin.
+//
+// Fikr shunday edi: xom ball hadlar yig'indisi bo'lgani uchun so'rovlar
+// orasida taqqoslanmaydi (ma'nosiz uzun jumla 109, aniq "noutbuk" 73),
+// demak uni so'rovning nazariy maksimal balliga bo'lib normallashtiraylik
+// va past nisbatlilarni tashlaylik.
+//
+// Qisqa so'rovlarda bu chiroyli ishladi (shovqin 0,15–0,27, haqiqiy
+// 0,49–1,11). Lekin BUTUN EVAL to'plamida o'lchanganda ikki to'plam
+// USTMA-UST tushdi:
+//
+//	0,066  HAQIQIY  "Koreyadan 2019-yilgi Hyundai Sonata, 2.0 litr…"
+//	0,124  HAQIQIY  "Dongfeng musor tashuvchi mashina, 3 dona…"
+//	0,153  shovqin  "Bu invoysdagi tovar, miqdor va narxni o'qi…"
+//	0,272  shovqin  "kim yaratgan seni"
+//	0,333  HAQIQIY  "naushnik"
+//
+// Sabab: "Hyundai", "Sonata", "Dongfeng", "Koreyadan" — noyob so'zlar,
+// ular MAXRAJNI shishiradi, lekin nomenklatura matnida hech qachon
+// uchramaydi. Ya'ni maxraj real erishish mumkin bo'lgan tavanni emas,
+// xayoliy tavanni o'lchaydi. Aynan brend nomi yozadigan foydalanuvchi
+// eng ko'p jazolanardi.
+//
+// 0,35 chegarasi bilan eval top-5 22/22 dan 18/22 ga tushdi.
+// Chinakam yechim — embedding qidiruvi (README, "Ma'lum kamchiliklar").
 
 // processWords — TOVAR emas, JARAYON haqidagi so'zlar.
 //
@@ -246,6 +285,34 @@ var synonyms = map[string]string{
 	"cobalt": "avtomobil", "malibu": "avtomobil", "captiva": "avtomobil",
 	"nexia": "avtomobil", "matiz": "avtomobil", "spark": "avtomobil",
 
+	// MAXSUS AVTOTRANSPORT (8705) — nomenklatura bo'shlig'i.
+	//
+	// 8705 tavsifida misollar sanab o'tilgan ("аварийные, автокраны,
+	// пожарные, автобетономешалки, для уборки дорог, поливомоечные,
+	// автомастерские, рентгеновские"), lekin MUSOROVOZ yo'q — bazada
+	// "musor"/"мусор" so'zi 8705 da umuman uchramaydi.
+	//
+	// Shuning uchun "musor tashuvchi mashina" so'rovi 8433 (qishloq
+	// xo'jaligi mashinalari) ni birinchi qilgan edi — bu indeks xatosi
+	// emas, LUG'AT bo'shlig'i: hech qanday kalit so'z qidiruvi mavjud
+	// bo'lmagan so'zni topa olmaydi.
+	//
+	// Nishon "avtotransport" — u faqat 8705 ning bosh bo'g'inida uchraydi
+	// ("Maxsus avtotransport vositalari"), shuning uchun boshqa guruhni
+	// tortib kelmaydi. "maxsus" nishon sifatida yaramaydi: u seyf, dastgoh
+	// qismlari va videoo'yin konsollarida ham bor.
+	//
+	// DIQQAT: bu yerga faqat AYNAN TRANSPORT bildiruvchi so'z qo'shiladi.
+	// "musor"/"chiqindi" yakka o'zi qo'shilmadi — "plastik chiqindi
+	// import qilsam" so'rovini 3825 (chiqindilar) dan 8705 ga burib
+	// yuborardi. Tovar emas, transport nomlari kiritilgan.
+	"musorovoz": "avtotransport", "musorvoz": "avtotransport",
+	"axlatvoz": "avtotransport", "assenizator": "avtotransport",
+	"evakuator": "avtotransport", "avtokran": "avtotransport",
+	"betonaralashtirgich": "avtotransport", "avtobeton": "avtotransport",
+	"suvsepar": "avtotransport", "poliv": "avtotransport",
+	"avtomastеrskaya": "avtotransport", "avtoustaxona": "avtotransport",
+
 	// Texnika — nomenklaturadagi atama bilan
 	"noutbuk": "hisoblash", "laptop": "hisoblash", "kompyuter": "hisoblash",
 	"planshet": "hisoblash",
@@ -254,8 +321,297 @@ var synonyms = map[string]string{
 	"muzlatkich": "muzlatgich",
 }
 
+// phraseSynonyms — KO'P SO'ZLI ibora → nomenklatura atamasi.
+//
+// NEGA ALOHIDA: synonyms yakka so'zga ishlaydi, lekin foydalanuvchi
+// texnikani ibora bilan ataydi — "musor tashuvchi mashina", "axlat
+// presslovchi avtomobil". Bu yerdagi so'zlarning HECH BIRI yakka o'zi
+// transportni bildirmaydi:
+//
+//	"musor"   yakka o'zi → chiqindi (3825), transport emas
+//	"mashina" yakka o'zi → har qanday mashina, juda umumiy
+//
+// Faqat BIRGALIKDA transport ma'nosini beradi. Shuning uchun ibora butun
+// so'rov matnida qidiriladi, tokenlarda emas.
+var phraseSynonyms = map[string]string{
+	"musor tashuvchi":      "avtotransport",
+	"musor tashish":        "avtotransport",
+	"axlat tashuvchi":      "avtotransport",
+	"axlat tashish":        "avtotransport",
+	"chiqindi tashuvchi":   "avtotransport",
+	"musor mashina":        "avtotransport",
+	"axlat mashina":        "avtotransport",
+	"axlat presslovchi":    "avtotransport",
+	"musor presslovchi":    "avtotransport",
+	"yo'l tozalash":        "avtotransport",
+	"yol tozalash":         "avtotransport",
+	"o't o'chirish":        "avtotransport",
+	"ot ochirish":          "avtotransport",
+	"beton aralashtir":     "avtotransport",
+	"suv sepuvchi":         "avtotransport",
+	"maxsus avtotransport": "avtotransport",
+}
+
+// appendPhraseTerms — so'rovda ibora uchrasa, nomenklatura atamasini qo'shadi.
+// Asl atamalar o'z joyida qoladi — ular boshqa guruhda mos kelishi mumkin.
+func appendPhraseTerms(terms []term, q string) []term {
+	seen := make(map[string]bool, len(terms))
+	for _, t := range terms {
+		seen[t.text] = true
+	}
+	for phrase, target := range phraseSynonyms {
+		if !strings.Contains(q, normalize(phrase)) {
+			continue
+		}
+		// Ibora tan olindi — uning SO'ZLARI endi alohida ma'no bermaydi.
+		//
+		// "musor tashuvchi" birgalikda transportni anglatadi. Yakka
+		// "musor" esa chiqindini anglatadi va 8417 (musor YOQUVCHI pech)
+		// ni tortib keladi — o'lchovda u 8705 ni birinchi o'rindan
+		// siqib chiqargan edi. Ibora aniqlangach, uning tarkibiy
+		// so'zlari tuzilmaviy ball bermaydi: ma'noni endi nishon
+		// atama ("avtotransport") ko'taradi.
+		for _, w := range strings.Fields(normalize(phrase)) {
+			for i := range terms {
+				if terms[i].text == w {
+					terms[i].weak = true
+				}
+			}
+		}
+		if !seen[target] {
+			seen[target] = true
+			terms = append(terms, newTerm(target))
+		}
+	}
+	return terms
+}
+
+// ---------------------------------------------------- atama variantlari
+
+// term — qidiruv atamasi va uning yozuv/qo'shimcha variantlari.
+//
+// NEGA VARIANT KERAK: indeks ikki tilda — path_uz LOTIN o'zbekcha,
+// path_ru KIRILL ruscha. Foydalanuvchi esa uchinchi ko'rinishda yozishi
+// mumkin: kirill o'zbekcha ("наушниклар") yoki ruscha so'zning lotin
+// translitiratsiyasi ("naushnik"). Ikkalasi ham indeksdagi hech bir
+// matnga to'g'ridan-to'g'ri mos kelmaydi.
+//
+// Haqiqiy misol (deklarant.uz dagi so'rov):
+//
+//	"наушниклар" → indeksda "наушники" bor, lekin Contains ishlamaydi
+//	               (so'rov UZUNROQ), natija — hech narsa
+//	"naushnik"   → indeksda umuman lotin ruscha yo'q, natija — hech narsa
+//
+// DIQQAT: variantlar ATAMA darajasida, ball darajasida emas. Har bir
+// atama baribir BIR MARTA ball beradi — aks holda ko'p variantli so'z
+// sun'iy og'irlashib, reytingni buzardi.
+type term struct {
+	text     string   // asl atama — IDF va nosozlikni tekshirish uchun
+	variants []string // asl + qo'shimchasiz + o'girilgan ko'rinishlar
+
+	// weak — bu atamaning nomenklaturada O'Z ekvivalenti bor, ya'ni
+	// sinonim orqali almashtirildi ("kompyuter" → "hisoblash").
+	//
+	// Sinonim mavjudligining o'zi shuni bildiradi: BAZA BU SO'ZNI
+	// ISHLATMAYDI. Shuning uchun so'z baribir matnda uchrasa, u odatda
+	// tovarning O'ZI emas, unga HAVOLA bo'ladi.
+	//
+	// Haqiqiy misol: "kompyuter" so'rovi monitorni (8528) kompyuterdan
+	// (8471) oldinga chiqarib yubordi. Sabab — 8471 tavsifida "kompyuter"
+	// so'zi UMUMAN yo'q ("hisoblash mashinalari" deb yozilgan), monitor
+	// tavsifida esa bor: "kompyuterlarga to'g'ridan-to'g'ri ulangan".
+	//
+	// Shuning uchun weak atama faqat umumiy matnda ball beradi, bosh/ona/
+	// barg bo'g'inlarida bermaydi — tuzilmaviy signalni sinonim ko'taradi.
+	weak bool
+}
+
+// in — atamaning biror varianti matnda uchraydimi.
+func (t term) in(hay string) bool {
+	for _, v := range t.variants {
+		if strings.Contains(hay, v) {
+			return true
+		}
+	}
+	return false
+}
+
+// short — juda qisqa atama (shovqin beradi, e'tiborsiz qoldiriladi).
+func (t term) short() bool { return len([]rune(t.text)) < 3 }
+
+// newTerm — atamadan barcha qidiriladigan ko'rinishlarni yasaydi.
+func newTerm(s string) term {
+	t := term{text: s}
+	seen := map[string]bool{}
+	add := func(v string) {
+		if v == "" || len([]rune(v)) < 3 || seen[v] {
+			return
+		}
+		seen[v] = true
+		t.variants = append(t.variants, v)
+	}
+
+	add(s)
+	add(stripUzSuffix(s))
+	// Boshqa yozuvga o'girib, u yerda ham qo'shimchani kesamiz.
+	if other := translit(s); other != s {
+		add(other)
+		add(stripUzSuffix(other))
+	}
+	return t
+}
+
+// uzSuffixes — o'zbek tilining eng ko'p uchraydigan qo'shimchalari,
+// ikkala yozuvda. Uzunroqlari OLDINDA turishi shart: "ларни" dan avval
+// "лар" kesilsa, "ни" osilib qolardi.
+//
+// Ro'yxat ataylab qisqa: har bir qo'shimcha noto'g'ri kesish xavfini
+// oshiradi. Masalan "-i" kiritilmadi — u "kali" → "kal" kabi begona
+// mosliklarni keltirib chiqarardi.
+var uzSuffixes = []string{
+	// kirill
+	"ларни", "лардан", "ларга", "ларда", "лари", "лар",
+	"нинг", "дан", "га", "да", "ни", "си",
+	// lotin
+	"larni", "lardan", "larga", "larda", "lari", "lar",
+	"ning", "dan", "ga", "da", "ni", "si",
+}
+
+// minStem — qo'shimcha kesilgandan keyin qolishi shart bo'lgan eng kam
+// uzunlik. Bo'lmasa "gaz" → "z" ga aylanib, hamma narsaga mos kelardi.
+const minStem = 4
+
+// stripUzSuffix — so'z oxiridagi bitta qo'shimchani kesadi.
+func stripUzSuffix(s string) string {
+	for _, suf := range uzSuffixes {
+		if !strings.HasSuffix(s, suf) {
+			continue
+		}
+		stem := strings.TrimSuffix(s, suf)
+		if len([]rune(stem)) >= minStem {
+			return stem
+		}
+	}
+	return stripIzafat(s)
+}
+
+// stripIzafat — UNDOSHDAN keyingi qaratqich "-i" sini kesadi.
+//
+// NEGA ALOHIDA: o'zbekchada tovar deyarli DOIM shu shaklda ataladi —
+// "havo konditsioneri", "telefon apparati", "yuk mashinasi". Unlidan
+// keyin qo'shimcha "-si" bo'ladi va u yuqoridagi ro'yxatda bor;
+// undoshdan keyin esa yalang "-i" va u yo'q edi.
+//
+// Jonli oqibat: "havo konditsioneri" so'rovi 8415 ni UMUMAN qaytarmadi
+// (bazada "konditsionerlar" deb yozilgan, "konditsioneri" esa unga
+// substring bo'lib tushmaydi) — o'rniga yog'-moy guruhi chiqdi.
+//
+// NEGA UNDOSH SHARTI: "-si" bilan chegara aniq bo'lgani kabi, bu ham
+// haqiqiy qoidaga tayanadi. Shartsiz kesilsa "dori" → "dor" kabi asl
+// so'zning oxiri yeyilardi.
+//
+// Eski izoh "-i" ni "kali" → "kal" xavfi uchun rad etgan edi; aslida
+// minStem uni allaqachon to'sadi ("kal" — 3 belgi, chegara 4).
+func stripIzafat(s string) string {
+	r := []rune(s)
+	if len(r) < minStem+1 || (r[len(r)-1] != 'i' && r[len(r)-1] != 'и') {
+		return s
+	}
+	if isVowel(r[len(r)-2]) {
+		return s // unlidan keyin qo'shimcha "-si" bo'ladi, yalang "-i" emas
+	}
+	return string(r[:len(r)-1])
+}
+
+func isVowel(r rune) bool {
+	return strings.ContainsRune("aeiouаеёиоуўэюя", r)
+}
+
+// cyrToLat / latToCyr — kirill ↔ lotin o'girish jadvallari.
+//
+// Ko'p harfli birikmalar (ch, sh, yo…) BIRINCHI bo'lishi kerak, aks
+// holda "ch" → "цх" bo'lib ketardi. strings.Replacer buni o'zi
+// ta'minlaydi: u eng uzun mos keluvchini oladi.
+var cyrToLat = strings.NewReplacer(
+	"ё", "yo", "ж", "j", "ц", "ts", "ч", "ch", "ш", "sh", "щ", "sh",
+	"ю", "yu", "я", "ya", "ў", "o'", "қ", "q", "ғ", "g'", "ҳ", "h",
+	"а", "a", "б", "b", "в", "v", "г", "g", "д", "d", "е", "e",
+	"з", "z", "и", "i", "й", "y", "к", "k", "л", "l", "м", "m",
+	"н", "n", "о", "o", "п", "p", "р", "r", "с", "s", "т", "t",
+	"у", "u", "ф", "f", "х", "x", "ъ", "", "ы", "i", "ь", "", "э", "e",
+)
+
+var latToCyr = strings.NewReplacer(
+	"yo", "ё", "yu", "ю", "ya", "я", "ch", "ч", "sh", "ш", "ts", "ц",
+	"o'", "ў", "g'", "ғ",
+	"a", "а", "b", "б", "v", "в", "g", "г", "d", "д", "e", "е",
+	"j", "ж", "z", "з", "i", "и", "y", "й", "k", "к", "l", "л",
+	"m", "м", "n", "н", "o", "о", "p", "п", "r", "р", "s", "с",
+	"t", "т", "u", "у", "f", "ф", "x", "х", "h", "ҳ", "q", "қ",
+)
+
+// translit — so'zni qarama-qarshi yozuvga o'giradi.
+func translit(s string) string {
+	if hasCyrillic(s) {
+		return cyrToLat.Replace(s)
+	}
+	return latToCyr.Replace(s)
+}
+
+func hasCyrillic(s string) bool {
+	for _, r := range s {
+		if r >= 0x0400 && r <= 0x04FF {
+			return true
+		}
+	}
+	return false
+}
+
+// procSuffixes — jarayon so'zini tanish uchun kesiladigan qo'shimchalar.
+//
+// Bu ro'yxat uzSuffixes dan KENGROQ va eng kam o'zak ham qisqaroq (3).
+// Buni xavfsiz qiladigan narsa — natija baribir processWords da
+// bo'lishi shart, ya'ni noto'g'ri kesishning zarari YOPIQ lug'at bilan
+// chegaralangan: "mashinini" → "mash" hech qayerda yo'q, e'tiborsiz
+// qoladi. Umumiy qidiruvda bunday agressiv kesish xavfli bo'lardi.
+var procSuffixes = []string{
+	"larini", "ining", "lari", "ini", "ning", "lar",
+	"dan", "ga", "da", "ni", "si", "i",
+}
+
+// isProcessWord — atama TOVAR emas, JARAYON haqidami.
+//
+// NEGA QO'SHIMCHA BILAN: foydalanuvchi "boj" deb emas, "bojini",
+// "to'lovini", "narxini" deb yozadi. Aniq moslik bilan ular filtrdan
+// o'tib ketardi.
+//
+// Bu nosozlik ilgari ham bor edi, lekin ZARARSIZ edi: "bojini" indeksdagi
+// hech narsaga mos kelmasdi. Yozuv o'girish qo'shilgach u "божини" ni ham
+// sinaydigan bo'ldi va 4907 (marka) ga yuqori ball berib, "musor tashish
+// mashinasi" so'rovini butunlay buzdi. Ya'ni yangi imkoniyat eski
+// bo'shliqni ochib berdi.
+func isProcessWord(t string) bool {
+	if processWords[t] {
+		return true
+	}
+	// Kirill o'zbekchada yozilgan bo'lsa ham tanilsin ("божини").
+	cands := []string{t}
+	if lat := translit(t); lat != t {
+		cands = append(cands, lat)
+	}
+	for _, c := range cands {
+		for _, suf := range procSuffixes {
+			stem := strings.TrimSuffix(c, suf)
+			if stem != c && len([]rune(stem)) >= 3 && processWords[stem] {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // contentTerms — so'rovdan tovarga oid atamalarni ajratadi.
-func contentTerms(fields []string) []string {
+func contentTerms(fields []string) []term {
 	var kept, all []string
 	for _, t := range fields {
 		t = strings.Trim(t, ".,!?()[]:;\"")
@@ -263,7 +619,7 @@ func contentTerms(fields []string) []string {
 			continue
 		}
 		all = append(all, t)
-		if !processWords[t] {
+		if !isProcessWord(t) {
 			kept = append(kept, t)
 		}
 	}
@@ -284,7 +640,18 @@ func contentTerms(fields []string) []string {
 			kept = append(kept, syn)
 		}
 	}
-	return kept
+	// Sinonim qidiruvi ASL so'z bo'yicha bo'ldi (yuqorida), endi har bir
+	// atamaga yozuv va qo'shimcha variantlarini yasaymiz.
+	out := make([]term, 0, len(kept))
+	for _, t := range kept {
+		nt := newTerm(t)
+		// Nomenklatura ekvivalenti bor — asl so'z tuzilmaviy ball bermaydi.
+		if _, replaced := synonyms[t]; replaced {
+			nt.weak = true
+		}
+		out = append(out, nt)
+	}
+	return out
 }
 
 // idfOf — har bir atamaning noyobligini hisoblaydi.
@@ -299,16 +666,18 @@ func contentTerms(fields []string) []string {
 // chiqargan edi — u "bilan", "kerak", "jadval", "ko'rsat" kabi bo'sh
 // so'zlarga mos kelgani uchun. Holbuki "ekstrakt" atamasi 3001 ni aniq
 // ko'rsatib turardi. IDF bilan noyob atama og'irroq bo'ladi.
-func idfOf(codes []Code, terms []string) []float64 {
+func idfOf(codes []Code, terms []term) []float64 {
 	idf := make([]float64, len(terms))
 	n := float64(len(codes))
 	for j, t := range terms {
-		if len([]rune(t)) < 3 {
+		if t.short() {
 			continue
 		}
+		// Hujjat chastotasi VARIANTLAR bo'yicha — atama qaysi yozuvda
+		// yozilganidan qat'i nazar, uning noyobligi bir xil bo'lishi kerak.
 		df := 0
 		for i := range codes {
-			if strings.Contains(codes[i].search, t) {
+			if t.in(codes[i].search) {
 				df++
 			}
 		}
@@ -332,17 +701,17 @@ func (s *Store) searchByCode(digits string, limit int) []Match {
 	return trim(matches, limit)
 }
 
-func score(c *Code, q string, terms []string, idf []float64) float64 {
+func score(c *Code, q string, terms []term, idf []float64) float64 {
 	var sc float64
 	// To'liq so'rov aynan uchrasa — eng kuchli signal, IDF siz.
 	if strings.Contains(c.search, q) {
 		sc += 10
 	}
 	for j, t := range terms {
-		if len([]rune(t)) < 3 {
+		if t.short() {
 			continue // juda qisqa so'zlar shovqin beradi
 		}
-		if strings.Contains(c.search, t) {
+		if t.in(c.search) {
 			sc += 3 * idf[j]
 		}
 	}
@@ -359,19 +728,68 @@ func score(c *Code, q string, terms []string, idf []float64) float64 {
 	// Ikkalasi ham mos keladi, lekin foydalanuvchi traktorni so'ragan.
 	head := normalize(headSegment(c.PathUZ) + " " + headSegment(c.PathRU))
 	leaf := normalize(c.NameUZ + " " + c.NameRU)
+	// ONA BO'G'IN — bargdan bittagina yuqoridagi, ya'ni ENG ANIQ tasnif.
+	//
+	// NEGA KERAK: 4 xonali guruh sarlavhasi bir nechta tovar oilasini
+	// sanaydi va u guruhdagi HAMMA kod uchun bir xil. Barg nomi esa
+	// ko'pincha shunchaki "прочие". Ya'ni farqlovchi matn ikkalasida ham
+	// emas — u o'rtada.
+	//
+	// Haqiqiy misol, 8518 guruhi (deklarant.uz da sinalgan "наушниклар"):
+	//
+	//	[0] Микрофоны и подставки для них          ← hamma 8518 da bir xil
+	//	[5] наушники и телефоны головные…          ← FAQAT 8518 30 da
+	//	[6] прочие                                  ← barg, foydasiz
+	//
+	// Ona bo'g'in baholanmagani uchun butun 8518 guruhi teng ball olgan
+	// va tartib kod raqamiga qarab qolgan edi — natijada "наушники"
+	// so'roviga mikrofon (8518 10) quloqchindan (8518 30) oldin chiqardi.
+	parent := normalize(parentSegment(c.PathUZ) + " " + parentSegment(c.PathRU))
 	for j, t := range terms {
-		if len([]rune(t)) < 3 {
+		if t.short() || t.weak {
 			continue
 		}
-		if strings.Contains(head, t) {
+		if t.in(head) {
 			sc += 8 * idf[j]
 		}
+		if t.in(parent) {
+			sc += parentWeight * idf[j]
+		}
 		// Yakuniy tugun nomida uchrasa — aniqroq moslik.
-		if strings.Contains(leaf, t) {
+		if t.in(leaf) {
 			sc += 4 * idf[j]
 		}
 	}
 	return sc
+}
+
+// parentWeight — ona bo'g'in ballining og'irligi.
+//
+// Qiymat TAXMIN QILINMADI, 18 ta holatli eval to'plamida o'lchandi
+// (TestParentWeightIsMeasured):
+//
+//	vazn  top-1   top-5
+//	  0   11/18   15/18   ← naushnik holatlari yiqiladi (tuzatish maqsadi)
+//	  2   13/18   18/18
+//	  3   13/18   18/18   ← tanlangan
+//	  4   12/18   17/18
+//	  6   13/18   17/18   ← 8417 (musor yoquvchi pech) 8705 ni bosib ketadi
+//
+// Yuqori vazn HAVOLALI mosliklarni tovar pozitsiyasining o'zidan ustun
+// qilib qo'yadi: 8417 tavsifida musor yoqish pechlari sanalgan va u
+// "musor tashuvchi mashina" so'rovini o'ziga tortib oladi.
+var parentWeight = 3.0
+
+// parentSegment — ierarxiyaning oxirgidan oldingi bo'g'ini ("A; B; C" → "B").
+//
+// Oxirgi bo'g'in — bargning o'zi (NameRU/NameUZ bilan bir xil), shuning
+// uchun u alohida baholanadi. Bo'g'in bitta bo'lsa, ona yo'q.
+func parentSegment(path string) string {
+	parts := strings.Split(path, ";")
+	if len(parts) < 2 {
+		return ""
+	}
+	return strings.TrimSpace(parts[len(parts)-2])
 }
 
 // headSegment — ierarxik tavsifning birinchi bo'g'ini ("A; B; C" → "A").

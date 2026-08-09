@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -17,6 +19,7 @@ import (
 	"deklarant-ai/backend/internal/laws"
 	"deklarant-ai/backend/internal/llm"
 	"deklarant-ai/backend/internal/rates"
+	"deklarant-ai/backend/internal/users"
 )
 
 // Server — barcha bog'liqliklarni ushlab turadi.
@@ -30,8 +33,20 @@ type Server struct {
 	docs      *docs.Store      // nil bo'lishi mumkin
 	limiter   *limiter
 	admin     *adminAuth
+	client    *clientAuth
+	users     users.Store // nil bo'lishi mumkin — o'shanda kirish talab qilinmaydi
 	stats     *stats
+
+	// taxonomy — bo'lim/guruh sarlavhalari (ixtiyoriy). Yo'q bo'lsa
+	// brauzer raqamlarni ko'rsatadi, ishlashdan to'xtamaydi.
+	taxonomy *hscode.Taxonomy
 }
+
+// SetTaxonomy — ierarxiya sarlavhalarini ulaydi.
+//
+// New() ga sakkizinchi parametr qilib qo'shilmadi: taksonomiya ixtiyoriy
+// va uni bermaydigan chaqiruv joylari (testlar) o'zgarishsiz qolishi kerak.
+func (s *Server) SetTaxonomy(t *hscode.Taxonomy) { s.taxonomy = t }
 
 // Stats — foydalanish statistikasi (main.go OnUsage ga ulanadi).
 func (s *Server) Stats() *stats { return s.stats }
@@ -51,6 +66,7 @@ func New(codes *hscode.Store, lawStore *laws.Store, chatSvc *chat.Service, llmCl
 		docs:      docStore,
 		limiter:   newLimiter(),
 		admin:     newAdminAuth(),
+		client:    newClientAuth(),
 		stats:     newStats(time.Now()),
 	}
 }
@@ -69,11 +85,22 @@ func (s *Server) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/health", s.handleHealth)
 	mux.HandleFunc("POST /api/hscode/search", s.handleHSSearch)
+	mux.HandleFunc("GET /api/hscode/browse", s.handleBrowse)
+	mux.HandleFunc("GET /api/laws/browse", s.handleLawsBrowse)
 	mux.HandleFunc("POST /api/duty/calculate", s.handleDutyCalc)
 	mux.HandleFunc("POST /api/utilfee/calculate", s.handleUtilFee)
 	mux.HandleFunc("GET /api/exemptions", s.handleExemptions)
-	mux.HandleFunc("POST /api/chat", s.handleChat)
-	mux.HandleFunc("POST /api/chat/stream", s.handleChatStream)
+	mux.HandleFunc("GET /api/requirements", s.handleRequirements)
+	mux.HandleFunc("GET /api/countries", s.handleCountries)
+	// Mijoz belgisi — brauzer shu yerdan token oladi.
+	mux.HandleFunc("POST /api/session", s.handleSession)
+	// Ro'yxatdan o'tish va kirish (foydalanuvchilar ombori ulangan bo'lsa).
+	s.userRoutes(mux)
+	// Chat PUL TURADI, shuning uchun KIRISH TALAB QILINADI. Qolgan
+	// endpointlar (qidiruv, boj, qonunlar) LLM ga umuman bormaydi va
+	// ochiq qoladi — ular xarajat yasamaydi.
+	mux.Handle("POST /api/chat", s.requireUser(s.handleChat))
+	mux.Handle("POST /api/chat/stream", s.requireUser(s.handleChatStream))
 	// Admin paneli — ADMIN_PASSWORD o'rnatilgan bo'lsagina ro'yxatga
 	// olinadi. Aks holda /admin yo'llari umuman mavjud emas (404).
 	s.adminRoutes(mux)
@@ -105,6 +132,10 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 type hsSearchRequest struct {
 	Query string `json:"query"`
 	UseAI bool   `json:"use_ai"`
+	// Limit — natijalar soni. Kod terilayotganda taklif ro'yxati uchun
+	// 5 ta kamlik qiladi. 0 = sukut (5), yuqori chegara 20 — katta son
+	// bilan butun bazani tortib bo'lmasin.
+	Limit int `json:"limit,omitempty"`
 }
 
 type hsSearchResponse struct {
@@ -124,11 +155,21 @@ func (s *Server) handleHSSearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	matches := s.codes.Search(req.Query, 5)
+	limit := req.Limit
+	if limit <= 0 {
+		limit = 5
+	}
+	if limit > 20 {
+		limit = 20
+	}
+	matches := s.codes.Search(req.Query, limit)
 	resp := hsSearchResponse{Matches: matches, Source: "keyword"}
 
-	// AI yoqilgan va mavjud bo'lsa, izoh qo'shamiz.
-	if req.UseAI && s.llm.Available() {
+	// AI izohi — pul turadi, shuning uchun faqat tanilgan mijozga.
+	//
+	// RAD ETILMAYDI, past darajaga tushiriladi: kodlar baribir topildi,
+	// javobsiz qoldirishdan ko'ra izohsiz berish yaxshiroq.
+	if req.UseAI && s.llm.Available() && s.clientOK(r) {
 		if comment, err := s.aiHSComment(r.Context(), req.Query, matches); err == nil {
 			resp.AIComment = comment
 			resp.Source = "ai"
@@ -261,7 +302,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
 	defer cancel()
 
-	reply, err := s.chat.Reply(ctx, chat.ParseMode(req.Mode), req.Messages)
+	reply, err := s.chat.Reply(ctx, s.modeFor(r, req.Mode), req.Messages)
 	if err != nil {
 		writeErr(w, http.StatusBadGateway, "AI javob bermadi: "+err.Error())
 		return
@@ -298,17 +339,45 @@ func (s *Server) countRequests(next http.Handler) http.Handler {
 	})
 }
 
+// withCORS — brauzerdan kelgan so'rovlarga ruxsat.
+//
+// ALLOWED_ORIGINS ro'yxati berilsa, faqat o'shalar. Berilmasa "*" —
+// ishlab chiqishda qulay, lekin ishlab turgan serverda ro'yxatni
+// berish kerak (admin panelida ogohlantirish chiqadi).
 func withCORS(next http.Handler) http.Handler {
+	allowed := splitList(os.Getenv("ALLOWED_ORIGINS"))
+
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
+		origin := r.Header.Get("Origin")
+		switch {
+		case len(allowed) == 0:
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+		case origin != "" && slices.Contains(allowed, origin):
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			// Javob Origin ga bog'liq — keshlar buni bilishi kerak,
+			// aks holda bitta manbaga berilgan ruxsat boshqasiga
+			// ko'chib qolardi.
+			w.Header().Add("Vary", "Origin")
+		}
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, "+clientHeader)
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// splitList — vergul bilan ajratilgan ro'yxat.
+func splitList(raw string) []string {
+	var out []string
+	for _, p := range strings.Split(raw, ",") {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // ---- Chat (oqim) ----
@@ -377,7 +446,7 @@ func (s *Server) handleChatStream(w http.ResponseWriter, r *http.Request) {
 		return nil
 	}
 
-	err := s.chat.ReplyStream(ctx, chat.ParseMode(req.Mode), req.Messages, func(chunk string) error {
+	err := s.chat.ReplyStream(ctx, s.modeFor(r, req.Mode), req.Messages, func(chunk string) error {
 		return send(map[string]string{"text": chunk})
 	})
 	if err != nil {
@@ -388,6 +457,73 @@ func (s *Server) handleChatStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = send(map[string]bool{"done": true})
+}
+
+// ---- Hujjat talablari (risk tekshiruvi) ----
+
+// handleRequirements — kod bo'yicha BARCHA talablar.
+//
+// `/api/exemptions` dan farqi: u faqat imtiyozlarni beradi. Rasmiylashtiruvni
+// to'xtatib qo'yadigan narsa esa ko'pincha imtiyoz emas — litsenziya yoki
+// sertifikat. Ular ilgari faqat chat orqali ko'rinardi.
+//
+// ⚠️ Ro'yxat TO'LIQ EMAS: manba bazada kod bo'yicha aniq ko'rsatma
+// bermaydigan hujjatlar yo'q. Shuning uchun javobda ham shu aytiladi —
+// "hech narsa topilmadi" ni "hech narsa kerak emas" deb o'qish
+// yuk chegarada to'xtashiga olib kelardi.
+func (s *Server) handleRequirements(w http.ResponseWriter, r *http.Request) {
+	if s.docs == nil {
+		writeErr(w, http.StatusServiceUnavailable, "hujjat talablari bazasi yuklanmagan")
+		return
+	}
+	code := strings.TrimSpace(r.URL.Query().Get("code"))
+	if code == "" {
+		writeErr(w, http.StatusBadRequest, "kod ko'rsatilmagan")
+		return
+	}
+	regime := docs.Import
+	if r.URL.Query().Get("regime") == "export" {
+		regime = docs.Export
+	}
+
+	reqs := s.docs.For(code, regime)
+	counts := map[string]int{}
+	for _, req := range reqs {
+		counts[req.Category]++
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"code":         code,
+		"regime":       regime,
+		"requirements": reqs,
+		"counts":       counts,
+		"as_of":        s.docs.Meta().RulesAsOf,
+		"note": "Ro'yxat kod oralig'i bo'yicha tuzilgan va TO'LIQ EMAS: " +
+			"manba bazada kod bo'yicha aniq ko'rsatma bermaydigan hujjatlar yo'q. " +
+			"Bo'sh ro'yxat \"hech narsa kerak emas\" degani EMAS.",
+	})
+}
+
+// ---- Davlatlar ----
+
+// handleCountries — GTD tanlagichlari uchun davlatlar ro'yxati.
+//
+// NEGA KERAK: kalkulyatorda kelib chiqish davlati tanlanadi va undan
+// boj koeffitsienti (BK 300-modda) chiqadi. Ro'yxatni frontendga qattiq
+// yozib qo'yish 254 davlatni ikki joyda saqlash bo'lardi.
+func (s *Server) handleCountries(w http.ResponseWriter, _ *http.Request) {
+	if s.countries == nil {
+		writeErr(w, http.StatusServiceUnavailable, "davlatlar ma'lumotnomasi yuklanmagan")
+		return
+	}
+	m := s.countries.Meta()
+	writeJSON(w, http.StatusOK, map[string]any{
+		"countries": s.countries.List(),
+		"legal":     m.LegalBasis,
+		// Ogohlantirish mijozga ham beriladi: ro'yxat GTD ma'lumotnomasi,
+		// rejim esa sanaga qarab o'zgarishi mumkin.
+		"warning": m.Warning,
+	})
 }
 
 // ---- Imtiyozlar ----

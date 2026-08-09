@@ -169,8 +169,19 @@ type Request struct {
 
 	ImportDuty float64 `json:"import_duty"`          // 20. Bojxona boji
 	ExtraDuty  float64 `json:"extra_duty,omitempty"` // 21. Qo'shimcha boj
-	Excise     float64 `json:"excise"`               // 27. Aksiz (advalor)
-	VAT        float64 `json:"vat"`                  // 29. QQS
+
+	// KOMBINATSIYALANGAN STAVKA (13 142 koddan 1 555 tasida bor).
+	//
+	// Stavka "10%, lekin 1 kg uchun 0,5 dollardan kam bo'lmagan"
+	// ko'rinishida beriladi. ImportDutySpecific — dollarda, bitta
+	// birlik uchun; SpecificQuantity — shu birlikdagi MIQDOR.
+	//
+	// Birlik kodga bog'liq: kg, dona, litr, juft yoki m² — qaysi biri
+	// ekani `hscode.Code.ImportDutySpecificUnit` da.
+	ImportDutySpecific float64 `json:"import_duty_specific,omitempty"`
+	SpecificQuantity   float64 `json:"specific_quantity,omitempty"`
+	Excise             float64 `json:"excise"` // 27. Aksiz (advalor)
+	VAT                float64 `json:"vat"`    // 29. QQS
 
 	// Yig'im shartlari.
 	FeeExempt   bool `json:"fee_exempt,omitempty"`  // yig'im olinmaydigan rejim
@@ -270,8 +281,44 @@ func Calculate(r Request) Result {
 	mult, originNote := originMultiplier(r)
 	rate := r.ImportDuty * mult
 	importDuty := cv * rate / 100
-	add(LineItem{Code: "20", Name: "Bojxona boji", Rate: rate, Base: cv,
-		Amount: importDuty, Note: originNote})
+	dutyItem := LineItem{Code: "20", Name: "Bojxona boji", Rate: rate, Base: cv,
+		Amount: importDuty, Note: originNote}
+
+	// Kombinatsiyalangan stavka: foizli va qat'iy qismdan KATTASI olinadi.
+	//
+	// ⚠️ QOIDA HUQUQIY JIHATDAN TASDIQLANMAGAN. Manba bazada faqat ikki
+	// raqam bor ("10" va "0,5"), ular qanday birlashishi yozilmagan.
+	// "…dan kam bo'lmagan" shakli EOII va O'zbekiston amaliyotida
+	// odatiy, shuning uchun shu olindi. Har holda bu HOZIRGIDAN yomon
+	// emas: ilgari qat'iy qism umuman hisobga olinmasdi, ya'ni natija
+	// har doim kam chiqardi.
+	if r.ImportDutySpecific > 0 && mult > 0 {
+		if r.SpecificQuantity <= 0 {
+			dutyItem.Note = joinNote(dutyItem.Note,
+				fmt.Sprintf("⚠️ kombinatsiyalangan stavka (%g%% va birlik uchun $%g), "+
+					"lekin MIQDOR berilmagan — qat'iy qism hisoblanmadi",
+					r.ImportDuty, r.ImportDutySpecific))
+		} else if r.USDRate <= 0 {
+			dutyItem.Note = joinNote(dutyItem.Note,
+				"⚠️ kombinatsiyalangan stavka, lekin USD kursi berilmagan — "+
+					"qat'iy qism hisoblanmadi")
+		} else {
+			specific := r.ImportDutySpecific * r.SpecificQuantity * r.USDRate * mult
+			if specific > importDuty {
+				dutyItem.Amount = specific
+				dutyItem.Rate = 0 // foiz emas, qat'iy qism qo'llanildi
+				dutyItem.Base = 0
+				dutyItem.Note = joinNote(dutyItem.Note, fmt.Sprintf(
+					"qat'iy qism qo'llanildi: %g × $%g × %g = %.0f so'm (foizli qism %.0f so'm edi)",
+					r.SpecificQuantity, r.ImportDutySpecific*mult, r.USDRate, specific, importDuty))
+			} else {
+				dutyItem.Note = joinNote(dutyItem.Note, fmt.Sprintf(
+					"foizli qism qo'llanildi (qat'iy qism %.0f so'm bo'lardi)", specific))
+			}
+			importDuty = dutyItem.Amount
+		}
+	}
+	add(dutyItem)
 
 	// 21. Qo'shimcha boj.
 	extraDuty := cv * r.ExtraDuty / 100
@@ -364,4 +411,16 @@ func originMultiplier(r Request) (float64, string) {
 	default:
 		return m, country + " — eng qulaylik rejimi, tarifdagi odatdagi stavka"
 	}
+}
+
+// joinNote — izohlarni birlashtiradi. Ikkalasi ham bo'lishi mumkin:
+// kelib chiqish izohi va kombinatsiyalangan stavka izohi.
+func joinNote(a, b string) string {
+	switch {
+	case a == "":
+		return b
+	case b == "":
+		return a
+	}
+	return a + "; " + b
 }

@@ -40,8 +40,31 @@
   .err { color: var(--danger); font-size: 0.85rem; min-height: 1.2em; }
   .muted { color: var(--muted); }
   .wrap-scroll { overflow-x: auto; }
-  code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.85em; }
+  code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.85em;
+    overflow-wrap: anywhere; }
   .hidden { display: none; }
+
+  /* Tablar */
+  .tabs { display:flex; gap:0.3rem; margin: 1rem 0 0.4rem; flex-wrap: wrap; }
+  .tabs button { background: transparent; color: var(--muted); border:1px solid transparent;
+    border-radius: 9px; padding: 0.45rem 0.8rem; }
+  .tabs button[aria-selected="true"] { background: var(--card); color: var(--ink);
+    border-color: var(--line); font-weight: 600; }
+
+  /* Sozlamalar */
+  .warn { background: color-mix(in srgb, var(--danger) 10%, var(--card));
+    border:1px solid color-mix(in srgb, var(--danger) 35%, var(--line));
+    border-radius: 12px; padding: 0.8rem 1rem; margin-bottom: 0.8rem; }
+  .warn ul { margin: 0.4rem 0 0; padding-left: 1.1rem; }
+  .warn li { margin: 0.25rem 0; }
+  .tag { display:inline-block; font-size: 0.72rem; padding: 0.1rem 0.45rem;
+    border-radius: 999px; border:1px solid var(--line); color: var(--muted);
+    white-space: nowrap; }
+  .tag.env { color: var(--brand); border-color: color-mix(in srgb, var(--brand) 40%, var(--line)); }
+  .tag.set { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 40%, var(--line)); }
+  .tag.off { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, var(--line)); }
+  td.val { max-width: 320px; }
+  .desc { font-size: 0.8rem; color: var(--muted); margin-top: 0.15rem; }
 </style>
 </head>
 <body>
@@ -65,17 +88,34 @@
       <button id="logoutBtn" class="ghost">Chiqish</button>
     </div>
 
-    <h2>Foydalanish</h2>
-    <div id="stats" class="grid"></div>
+    <div class="tabs" role="tablist">
+      <button data-tab="use" role="tab" aria-selected="true">Foydalanish</button>
+      <button data-tab="data" role="tab" aria-selected="false">Ma'lumot</button>
+      <button data-tab="cfg" role="tab" aria-selected="false">Sozlamalar</button>
+    </div>
 
-    <h2>Token sarfi (model bo'yicha)</h2>
-    <div class="card wrap-scroll"><table id="tokens"></table></div>
+    <section id="tab-use">
+      <h2>Foydalanish</h2>
+      <div id="stats" class="grid"></div>
 
-    <h2>So'nggi so'rovlar</h2>
-    <div class="card wrap-scroll"><table id="recent"></table></div>
+      <h2>Token sarfi (model bo'yicha)</h2>
+      <div class="card wrap-scroll"><table id="tokens"></table></div>
 
-    <h2>Ma'lumot bazalari</h2>
-    <div id="data"></div>
+      <h2>So'nggi so'rovlar</h2>
+      <div class="card wrap-scroll"><table id="recent"></table></div>
+    </section>
+
+    <section id="tab-data" class="hidden">
+      <h2>Ma'lumot bazalari</h2>
+      <div id="data"></div>
+    </section>
+
+    <section id="tab-cfg" class="hidden">
+      <h2>Sozlamalar</h2>
+      <div id="cfgWarn"></div>
+      <div id="cfg"></div>
+      <p class="muted" id="cfgNote" style="font-size:0.83rem"></p>
+    </section>
   </div>
 
 </div>
@@ -83,6 +123,23 @@
 <script>
 const $ = (id) => document.getElementById(id)
 const fmt = (n) => new Intl.NumberFormat('uz-UZ').format(n)
+
+// esc — HTML ekranlash. Sozlama qiymatlari muhitdan keladi va ichida
+// & yoki < bo'lishi mumkin (masalan URL parametri). Ular xom holda
+// qo'yilsa sahifa buzilardi.
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g,
+  (c) => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]))
+
+// Tablar
+document.querySelectorAll('.tabs button').forEach((btn) => {
+  btn.onclick = () => {
+    document.querySelectorAll('.tabs button').forEach((b) => {
+      const on = b === btn
+      b.setAttribute('aria-selected', String(on))
+      $('tab-' + b.dataset.tab).classList.toggle('hidden', !on)
+    })
+  }
+})
 
 async function api(path, opts) {
   const res = await fetch(path, { credentials: 'same-origin', ...opts })
@@ -167,10 +224,59 @@ function renderData(d) {
   ).join('')
 }
 
+function renderSettings(cfg) {
+  // Ogohlantirishlar — sozlama ro'yxatining o'zi "hammasi joyidami"
+  // degan savolga javob bermaydi, shuning uchun xavfli holatlar tepada.
+  const w = cfg.warnings || []
+  $('cfgWarn').innerHTML = w.length
+    ? `<div class="warn"><strong>Diqqat (${w.length})</strong>
+       <ul>${w.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>`
+    : ''
+
+  $('cfg').innerHTML = (cfg.groups || []).map((g) => {
+    const rows = g.items.map((s) => {
+      // Maxfiy qiymat KO'RSATILMAYDI — faqat holati.
+      const val = s.secret
+        ? (s.set ? '<span class="tag set">sozlangan</span>'
+                 : '<span class="tag off">sozlanmagan</span>')
+        : `<code>${esc(s.value) || '<span class="muted">bo\'sh</span>'}</code>`
+      const src = s.source === 'muhit'
+        ? '<span class="tag env">muhit</span>'
+        : '<span class="tag">sukut</span>'
+      const restart = s.restart
+        ? '<span class="tag">qayta ishga tushirish</span>'
+        : '<span class="tag set">darrov</span>'
+      return `<tr>
+        <td><code>${esc(s.name)}</code><div class="desc">${esc(s.desc)}</div></td>
+        <td class="val">${val}</td>
+        <td>${src}</td>
+        <td>${restart}</td>
+      </tr>`
+    }).join('')
+    return `<h2>${esc(g.group)}</h2>
+      <div class="card wrap-scroll"><table>
+        <tr><th>O'zgaruvchi</th><th>Amaldagi qiymat</th><th>Manba</th><th>O'zgarishi</th></tr>
+        ${rows}
+      </table></div>`
+  }).join('')
+
+  $('cfgNote').textContent = cfg.note || ''
+}
+
+// refresh — tez-tez yangilanadigan qism (statistika).
+async function refresh() {
+  const s = await api('/admin/api/stats')
+  renderStats(s)
+}
+
+// load — panelni to'liq yuklaydi. Sozlama va bazalar kamdan-kam
+// o'zgaradi, shuning uchun ular faqat shu yerda o'qiladi.
 async function load() {
   try {
-    const [s, d] = await Promise.all([api('/admin/api/stats'), api('/admin/api/data')])
-    renderStats(s); renderData(d); showPanel()
+    const [s, d, cfg] = await Promise.all([
+      api('/admin/api/stats'), api('/admin/api/data'), api('/admin/api/settings'),
+    ])
+    renderStats(s); renderData(d); renderSettings(cfg); showPanel()
   } catch (e) {
     if (e.message !== 'avtorizatsiya kerak') $('loginErr').textContent = e.message
   }
@@ -178,8 +284,11 @@ async function load() {
 
 // Boshlanishida sessiya bormi tekshiramiz.
 load()
-// Har 10 soniyada statistikani yangilaymiz (panel ochiq bo'lsa).
-setInterval(() => { if (!$('panel').classList.contains('hidden')) load() }, 10000)
+// Har 10 soniyada FAQAT statistika yangilanadi — sozlamalarni har safar
+// qayta so'rash ortiqcha yuk bo'lardi.
+setInterval(() => {
+  if (!$('panel').classList.contains('hidden')) refresh().catch(() => {})
+}, 10000)
 </script>
 </body>
 </html>

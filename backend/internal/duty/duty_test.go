@@ -294,3 +294,99 @@ func TestOriginChangesVATBase(t *testing.T) {
 	// EQR: baza = qiymat + boj.
 	eq(t, find(Calculate(mfn), "29").Base, 110_000_000, "QQS bazasi (EQR)")
 }
+
+// ---- Kombinatsiyalangan stavka (10%, lekin kg uchun $0,5 dan kam emas) ----
+
+// combinedReq — 9405 42 003 9 kodiga o'xshash holat.
+func combinedReq(value, qty float64) Request {
+	return Request{
+		Date:               time.Date(2026, 7, 19, 0, 0, 0, 0, time.UTC),
+		CustomsValue:       value,
+		USDRate:            12_093.35,
+		ImportDuty:         10,
+		ImportDutySpecific: 0.5,
+		SpecificQuantity:   qty,
+		VAT:                12,
+		FeeExempt:          true,
+	}
+}
+
+func dutyLine(t *testing.T, res Result) LineItem {
+	t.Helper()
+	for _, it := range res.Items {
+		if it.Code == "20" {
+			return it
+		}
+	}
+	t.Fatal("20-kod (bojxona boji) qatori yo'q")
+	return LineItem{}
+}
+
+// Foizli qism kattaroq bo'lsa — o'sha qo'llanadi.
+func TestCombinedRatePercentWins(t *testing.T) {
+	// 100 mln so'mning 10% i = 10 mln. Qat'iy: 10 kg × $0,5 × 12093 ≈ 60 tys.
+	res := Calculate(combinedReq(100_000_000, 10))
+	got := dutyLine(t, res)
+
+	if want := 10_000_000.0; got.Amount != want {
+		t.Errorf("boj %.0f; %.0f kutilgan", got.Amount, want)
+	}
+	if got.Rate != 10 {
+		t.Errorf("stavka %g; 10 kutilgan", got.Rate)
+	}
+	// Foydalanuvchi qat'iy qism ham hisoblanganini KO'RISHI kerak.
+	if !strings.Contains(got.Note, "qat'iy qism") {
+		t.Errorf("izohda qat'iy qism eslatilmagan: %q", got.Note)
+	}
+}
+
+// Qat'iy qism kattaroq bo'lsa — u qo'llanadi. AYNAN SHU holat ilgari
+// yo'qolardi: boj kam hisoblanardi.
+func TestCombinedRateSpecificWins(t *testing.T) {
+	// 1 mln so'mning 10% i = 100 000. Qat'iy: 1000 kg × $0,5 × 12093,35 = 6 046 675.
+	res := Calculate(combinedReq(1_000_000, 1000))
+	got := dutyLine(t, res)
+
+	want := 1000 * 0.5 * 12_093.35
+	if math.Abs(got.Amount-want) > 1 {
+		t.Errorf("boj %.0f; %.0f kutilgan (qat'iy qism)", got.Amount, want)
+	}
+	if !strings.Contains(got.Note, "qat'iy qism qo'llanildi") {
+		t.Errorf("qaysi qism qo'llangani aytilmagan: %q", got.Note)
+	}
+	// QQS bazasiga ham KATTA boj kirishi kerak.
+	for _, it := range res.Items {
+		if it.Code == "29" && it.Base < want {
+			t.Errorf("QQS bazasi %.0f; kamida %.0f kutilgan", it.Base, want)
+		}
+	}
+}
+
+// Miqdor yoki kurs berilmasa — JIM QOLMASLIK kerak.
+func TestCombinedRateMissingInputWarns(t *testing.T) {
+	cases := map[string]Request{
+		"miqdorsiz": func() Request { r := combinedReq(1_000_000, 0); return r }(),
+		"kurssiz":   func() Request { r := combinedReq(1_000_000, 1000); r.USDRate = 0; return r }(),
+	}
+	for name, req := range cases {
+		got := dutyLine(t, Calculate(req))
+		if !strings.Contains(got.Note, "⚠️") {
+			t.Errorf("%s: ogohlantirish yo'q, izoh: %q", name, got.Note)
+		}
+		// Foizli qism baribir hisoblanishi kerak.
+		if got.Amount != 100_000 {
+			t.Errorf("%s: boj %.0f; 100000 kutilgan", name, got.Amount)
+		}
+	}
+}
+
+// Erkin savdo (×0) da qat'iy qism ham qo'llanmasligi kerak.
+func TestCombinedRateFreeTradeZero(t *testing.T) {
+	req := combinedReq(1_000_000, 1000)
+	zero := 0.0
+	req.OriginMultiplier = &zero
+
+	if got := dutyLine(t, Calculate(req)); got.Amount != 0 {
+		t.Errorf("erkin savdoda boj %.0f; 0 kutilgan", got.Amount)
+	}
+}

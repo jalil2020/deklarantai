@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -39,9 +40,6 @@ const (
 	// juda kichik va chegara foydali natijalarni ham kesib yuborardi.
 	maxContext = 24_000
 
-	// shortQuestion — bundan qisqa va bazadan hech narsa topilmagan savol
-	// arzon modelga yo'naltiriladi (salomlashish, "nima qila olasan").
-	shortQuestion = 120
 )
 
 // Mode — javob uslubi. Faktlar va ogohlantirishlar ikkala rejimda BIR XIL;
@@ -135,6 +133,14 @@ BOJXONA TO'LOVLARI (GTD kodlari bilan):
       yig'imni DOIM hisoblab ber, "alohida belgilanadi" deb qoldirma.
   12. Ko'rik — ish vaqtida 25% BRV/soat, tashqarida 2×BRV/soat (to'liq soatga yaxlitlanadi).
   20. Bojxona boji     = bojxona qiymati × boj%
+      ⚠️ KOMBINATSIYALANGAN STAVKA. Kod yonida "QAT'IY QISM: 1 kg uchun $0,5"
+      yozilgan bo'lsa, stavka "10%, LEKIN 1 kg uchun 0,5 dollardan kam emas"
+      degani. Ikkalasini ham hisobla va KATTASINI ol:
+          foizli  = bojxona qiymati × boj%
+          qat'iy  = miqdor × $qat'iy × USD kursi
+          boj     = max(foizli, qat'iy)
+      Miqdor (kg, dona, litr…) berilmagan bo'lsa — uni SO'RA, faqat foizli
+      qismni hisoblab qo'yma: qat'iy qism ko'pincha kattaroq chiqadi.
   21. Qo'shimcha boj   = bojxona qiymati × qo'shimcha%
   27. Aksiz            = bojxona qiymati × aksiz%   (Soliq kodeksi 285-modda:
       advalor stavkada baza — bojxona qiymati, bojsiz; qat'iy stavkada esa
@@ -161,6 +167,21 @@ BOJXONA TO'LOVLARI (GTD kodlari bilan):
   butun hisobni buzadi va buni foydalanuvchi sezmay qoladi.
   Kurs sanaga bog'liq: bojxona qiymati deklaratsiya ro'yxatga olingan
   kundagi Markaziy bank kursi bo'yicha hisoblanadi.
+
+⚠️ O'YLAB TOPILGAN RAQAM BILAN HISOBLAMA.
+  Faktura qiymati, miqdor, og'irlik, dvigatel hajmi, yoshi — birontasi
+  aytilmagan bo'lsa, o'rniga "misol uchun", "faraz qilaylik", "taxminan"
+  deb O'ZING raqam qo'yma.
+  "Hozircha misol bilan tushuntiraman, aniq raqamlar bergach qayta
+  hisoblab beraman" kabi javob BERMA.
+  O'rniga: qaysi raqam yetishmayotganini AYT va SO'RA — qisqa, bitta
+  jumlada. Formulani ko'rsatish mumkin, lekin RAQAMSIZ.
+  NEGA: misoldagi summa javobda haqiqiy hisob bilan bir xil ko'rinadi.
+  Foydalanuvchi uni ko'chirib olib, shartnoma yoki deklaratsiyada
+  ishlatib yuborishi mumkin — u "misol" ekanini keyin eslamaydi.
+  YAGONA ISTISNO: foydalanuvchining O'ZI misol so'rasa ("misol keltir",
+  "taxminan qancha bo'ladi") — o'shanda hisobla, lekin har bir o'ylab
+  topilgan raqamni javobda ochiq belgila.
 
 QOIDALAR:
 - O'zbek tilida, aniq va lo'nda javob ber (foydalanuvchi boshqa tilda so'rasa, o'sha tilda).
@@ -339,26 +360,64 @@ QO'LINGDAGI BAZA:
 
 // Reply — suhbat tarixiga javob qaytaradi.
 func (s *Service) Reply(ctx context.Context, mode Mode, history []llm.Message) (string, error) {
-	msgs, _ := s.withRetrieval(ctx, history)
-	return s.client.Complete(ctx, s.systemPrompt(mode), msgs)
+	msgs, retrieved := s.withRetrieval(ctx, trimHistory(history))
+	return s.client.CompleteWith(ctx, s.modelOf(history, retrieved), s.systemPrompt(mode), msgs)
 }
 
 // ReplyStream — javobni bo'lak-bo'lak qaytaradi (SSE uchun).
 //
 // Retrieval Reply bilan bir xil — farqi faqat javobning yetkazilishida,
-// shuning uchun ikkala yo'l ham bir xil kontekst va ko'rsatma bilan ishlaydi.
+// shuning uchun ikkala yo'l ham bir xil kontekst, ko'rsatma VA MODEL bilan
+// ishlaydi. Model tanlash ikkalasida bir joydan (modelOf) olinadi: ilgari
+// Reply doim asosiy modelga ketardi, ya'ni oqimsiz javob qimmatroq edi.
 func (s *Service) ReplyStream(ctx context.Context, mode Mode, history []llm.Message, onChunk llm.StreamFunc) error {
-	msgs, retrieved := s.withRetrieval(ctx, history)
-	var text string
-	if len(history) > 0 {
-		text = history[len(history)-1].Content
+	msgs, retrieved := s.withRetrieval(ctx, trimHistory(history))
+	return s.client.Stream(ctx, s.modelOf(history, retrieved), s.systemPrompt(mode), msgs, onChunk)
+}
+
+// modelOf — suhbat tarixiga qarab darajani tanlaydi.
+//
+// ⚠️ BUTUN TARIX qaraladi, faqat oxirgi xabar emas.
+//
+// NEGA: hisob-kitob suhbati qisqa savol bilan davom etadi —
+//
+//	"9405 42 003 9, Xitoydan 1000 kg, faktura $2000, bojni hisobla"
+//	"unda 500 kg bo'lsa-chi?"
+//
+// Ikkinchi xabarda na hisob so'zi, na kod bor. Faqat o'shanga qarasak,
+// u arzon darajaga tushardi va foydalanuvchi javob boshqa modeldan
+// kelganini bilmasdi. Suhbatda bir marta hisob-kitob boshlangan bo'lsa,
+// u OXIRIGACHA Full da qoladi.
+func (s *Service) modelOf(history []llm.Message, retrieved bool) llm.Model {
+	var last string
+	calc := false
+	for _, m := range history {
+		if m.Role != "user" {
+			continue
+		}
+		// Rasm — doim Full (llm.pickModel ham buni ta'minlaydi, lekin
+		// qaror shu yerda ham ko'rinib tursin).
+		if len(m.Images) > 0 {
+			return llm.Full
+		}
+		if hasCalcIntent(m.Content) {
+			calc = true
+		}
+		last = m.Content
 	}
-	return s.client.Stream(ctx, modelFor(text, retrieved), s.systemPrompt(mode), msgs, onChunk)
+	if calc {
+		return llm.Full
+	}
+	return modelFor(last, retrieved)
 }
 
 // withRetrieval — oxirgi foydalanuvchi savoliga mos TIF TN kodlari va qonun
 // parchalarini topib, uning matniga qo'shib qo'yadi.
 // Asl tarix o'zgartirilmaydi (nusxa qaytariladi).
+//
+// Ikkinchi qiymat — MA'NOLI topilma bo'ldimi (kod, qonun, hujjat, imtiyoz).
+// Valyuta kursi bunga KIRMAYDI: u deyarli har so'rovga qo'shiladi va uni
+// sanash model tanlashni buzardi (pastda batafsil).
 func (s *Service) withRetrieval(ctx context.Context, history []llm.Message) ([]llm.Message, bool) {
 	if len(history) == 0 {
 		return history, false
@@ -367,13 +426,35 @@ func (s *Service) withRetrieval(ctx context.Context, history []llm.Message) ([]l
 	if last.Role != "user" || strings.TrimSpace(last.Content) == "" {
 		return history, false // rasm-only xabar yoki bo'sh — qidiradigan narsa yo'q
 	}
+	// BO'SH GAPGA KONTEKST IZLANMAYDI.
+	//
+	// Qidiruv "salom" ga ham parcha topadi (so'z ichidan: "salomatlik"),
+	// natijada salomlashishga 13 878 belgi qonun matni qo'shilardi —
+	// o'lchangan narxi $0,039, ya'ni haqiqiy huquqiy savoldan qimmat.
+	//
+	// Bir marta bu ball chegarasi bilan hal qilishga urinilgan va u
+	// haqiqiy savollarni ham kesib yuborgan (laws.go dagi izohga qarang).
+	// To'g'ri joyi shu yer: savolning O'ZI bo'sh gapmi — buni bilish
+	// uchun ball kerak emas.
+	if isSmallTalk(last.Content) && len(last.Images) == 0 {
+		return history, false
+	}
 
 	var blocks []string
 	// Aniq kodga bog'langan imtiyoz topildimi — umumiy ro'yxat kerakmi,
 	// shuni hal qiladi.
 	codeExemptionFound := false
 	if s.codes != nil {
-		if m := s.codes.Search(last.Content, topCodes); len(m) > 0 {
+		matches := s.codes.Search(last.Content, topCodes)
+		// ANIQ KOD birinchi turishi shart.
+		//
+		// Jonli sinovda foydalanuvchi "9405 42 003 9 kodi bo'yicha…" deb
+		// so'radi, lekin kod jumla ichida bo'lgani uchun qidiruv uni
+		// top-8 ga ham chiqarmadi — model esa yaqin kodni (…003 2) olib,
+		// javobni BOSHQA kod bo'yicha berdi. Stavkalar bu safar bir xil
+		// edi, lekin boshqa kodda javob butunlay noto'g'ri bo'lardi.
+		matches = promoteExplicit(s.codes, last.Content, matches)
+		if m := matches; len(m) > 0 {
 			// Imtiyoz belgisi aynan STAVKA yonida ko'rsatiladi. Uni faqat
 			// alohida blokda bersak, model "QQS 12%" ni ko'rib hisoblab
 			// yuborishi mumkin — imtiyoz esa pastda qolib ketardi.
@@ -440,6 +521,18 @@ func (s *Service) withRetrieval(ctx context.Context, history []llm.Message) ([]l
 		}
 	}
 
+	// MODEL TANLASH uchun belgi — kurs blokidan OLDIN olinadi.
+	//
+	// ⚠️ NEGA AYNAN SHU YERDA: kurs bloki deyarli DOIM qo'shiladi (u
+	// mustaqil ravishda foydali). Uni ham "bazadan topildi" deb hisoblasak,
+	// `retrieved` hech qachon false bo'lmaydi — o'lchandi: "salom",
+	// "rahmat", "nima qila olasan" ham Opus ga ketardi, ya'ni arzon
+	// daraja ishlab chiqarishda O'LIK KOD edi.
+	//
+	// Bu yerda faqat MA'NOLI topilma sanaladi: kod, qonun moddasi,
+	// hujjat talabi yoki imtiyoz dasturi.
+	substantive := len(blocks) > 0
+
 	// Valyuta kursi — bloklar bo'lmasa ham foydali (masalan "bugun kurs qancha").
 	if rb := s.ratesBlock(ctx); rb != "" {
 		blocks = append(blocks, rb)
@@ -448,26 +541,169 @@ func (s *Service) withRetrieval(ctx context.Context, history []llm.Message) ([]l
 		return history, false
 	}
 
+	// SURAT QIDIRUVGA KO'RINMAYDI — buni modelga AYTAMIZ.
+	//
+	// Qidiruv faqat MATNDAN ishlaydi. Foydalanuvchi invoys surati yuborib
+	// "tovarni o'qi va bojni hisobla" desa, matnda tovar nomi umuman
+	// bo'lmaydi va qidiruv butunlay begona kodlarni qaytaradi.
+	//
+	// Jonli sinovda aynan shunday bo'ldi: konditsioner invoysiga bazadan
+	// yog'-moy guruhi (1515–2306) keldi. Model o'sha safar o'zi sezib
+	// "bu tovarga aloqasi yo'q" dedi, lekin bunga tayanib bo'lmaydi —
+	// kontekstdagi stavkani ishonchli deb olsa, javob butunlay xato
+	// bo'lardi. Ogohlantirish ro'yxatning BOSHIDA turadi.
+	if len(last.Images) > 0 {
+		blocks = append([]string{
+			"⚠️ DIQQAT: quyidagi baza ma'lumotlari FAQAT SAVOL MATNI bo'yicha " +
+				"topilgan — QIDIRUV SURATNI KO'RMAYDI. Suratdagi tovar bilan " +
+				"ular mos kelmasligi mumkin. Suratdan o'qigan tovaring quyidagi " +
+				"kodlarga to'g'ri kelmasa, ULARNING STAVKASINI ISHLATMA: " +
+				"kodni o'zing ayt va foydalanuvchidan uni alohida so'rashini " +
+				"yoki kodni yozib qayta so'rashini iltimos qil.",
+		}, blocks...)
+	}
+
 	out := make([]llm.Message, len(history))
 	copy(out, history)
 	out[len(out)-1].Content = last.Content + "\n\n" + strings.Join(blocks, "\n\n")
-	return out, true
+	return out, substantive
 }
 
-// modelFor — savolga qaysi model mos.
+// calcWords — HISOB-KITOB niyatini bildiruvchi so'zlar.
 //
-// Arzon model FAQAT bazadan hech narsa topilmagan QISQA savolga beriladi:
-// salomlashish, "nima qila olasan", "rahmat". Bunday savolda kontekst ham
-// yo'q, ya'ni javob modelning umumiy bilimiga tayanadi va Haiku bemalol
-// uddalaydi.
+// Bu so'zlardan biri uchrasa, savol Claude ga ketadi. Sabab iqtisodiy
+// emas, xavf bilan bog'liq: noto'g'ri hisoblangan boj deklarantga real
+// pul va jarima turadi, "bu kod nimani anglatadi" degan savoldagi
+// noaniqlik esa shunchaki qayta so'rashga olib keladi.
 //
-// DIQQAT: bazadan biror narsa topilgan bo'lsa — DOIM asosiy model. Stavka,
-// modda raqami va hisob-kitob — arzonlashtiriladigan joy emas.
+// Ro'yxat ATAYLAB keng: shubha bo'lsa qimmatroq modelga yuborish
+// arzonroq modelda xato qilishdan xavfsizroq.
+var calcWords = map[string]bool{
+	"boj": true, "bojni": true, "bojini": true, "bojxona": true,
+	"qqs": true, "nds": true, "aksiz": true, "aktsiz": true,
+	"utilizatsiya": true, "utilizatsion": true, "yig'im": true, "yigim": true,
+	"to'lov": true, "tolov": true, "to'lovlar": true, "to'lovni": true,
+	"hisobla": true, "hisoblab": true, "hisob": true, "hisoblang": true,
+	"qancha": true, "narx": true, "narxi": true, "summa": true,
+	"stavka": true, "stavkasi": true, "kurs": true, "soliq": true,
+	"chiqadi": true, "tushadi": true, "brv": true,
+}
+
+// modelFor — savolga qaysi daraja mos.
+//
+// SIYOSAT: xato narxi yuqori bo'lgan joy Claude da qoladi, qolgani arzon
+// provayderga (GLM-5.2) ketadi.
+//
+//	rasm         → Full  (GLM-5.2 rasmni umuman qabul qilmaydi)
+//	hisob-kitob  → Full  (boj/QQS/aksiz/utilizatsiya — jarima xavfi bor)
+//	qolgani      → Cheap (hujjat ro'yxati, kod izohi, salomlashish)
+//
+// Rasm tekshiruvi llm.pickModel da TAKRORLANADI — bu ataylab: bu yerda
+// yo'naltirish siyosati, u yerda esa provayder imkoniyati tekshiriladi.
+// Shu qatlam xato qilsa ham rasm matn-only modelga tushmaydi.
+// ⚠️ SUKUT — Full. Arzonlashtirish faqat AYTIB o'tilgan ikki holatda.
+//
+// Ilgari qoida teskari edi: "bazadan biror narsa topildimi — demak
+// model faqat faktni qayta ifodalaydi, o'rta daraja yetadi". O'lchov
+// buni rad etdi: 25 ta haqiqiy deklarant savolidan 19 tasi (76%)
+// Opus dan Sonnet ga tushib ketgan va foydalanuvchi javob sifati
+// pasayganini sezgan.
+//
+// Xato faraz shunda edi: "kontekst bor" ≠ "o'ylash kerak emas".
+// Aksincha, eng ko'p mulohaza talab qiladigan savollar aynan
+// kontekstli bo'ladi:
+//
+//	tasnif        — "elektr skuter qaysi kodga kiradi" (bu HUKM,
+//	                kontekstdan o'qish emas)
+//	kelib chiqish — 300-moddani tovar, davlat va sertifikat bilan
+//	                bog'lash kerak
+//	imtiyoz       — shart bajarilgan-bajarilmaganini tekshirish
+//
+// Shuning uchun endi teskari: hamma narsa Full, arzon darajaga
+// tushish uchun ASOS kerak.
 func modelFor(text string, retrieved bool) llm.Model {
-	if retrieved || len([]rune(text)) > shortQuestion {
-		return llm.Full
+	// Bo'sh gap: "salom", "rahmat". Faktik da'vo yo'q, xato narxi nol.
+	//
+	// ⚠️ `retrieved` SHART EMAS. Ilgari "kontekst topilmagan bo'lsa"
+	// deb qo'yilgan edi va u ishlamadi: qidiruv "salom" ga ham parcha
+	// topadi ("salom" ⊂ "salomatlik"), ya'ni retrieved doim true bo'lib,
+	// salomlashish eng qimmat modelga ketardi. Bo'sh gapga topilgan
+	// moslik — ta'rifi bo'yicha shovqin.
+	if isSmallTalk(text) {
+		return llm.Cheap
 	}
-	return llm.Fast
+	// Sof MA'LUMOT O'QISH: "bu kod nimani anglatadi", "qaysi modda".
+	// Javob to'liq kontekstdagi matnga tayanadi.
+	//
+	// Ro'yxat ATAYLAB tor va oq ro'yxat: shubha bo'lsa Full qoladi.
+	// Kengaytirishdan oldin o'lchash kerak.
+	if retrieved && isLookup(text) && !hasCalcIntent(text) {
+		return llm.Mid
+	}
+	return llm.Full
+}
+
+// smallTalkWords — bazaga ham, bojxonaga ham aloqasi yo'q so'zlar.
+var smallTalkWords = map[string]bool{
+	"salom": true, "assalom": true, "assalomu": true, "alaykum": true,
+	"rahmat": true, "tashakkur": true, "xayr": true, "qalaysan": true,
+	"qalaysiz": true, "yaxshimisiz": true, "salomatmisiz": true,
+	"hello": true, "hi": true, "privet": true, "spasibo": true,
+	"ok": true, "okay": true, "zo'r": true, "zur": true, "bo'ldi": true,
+}
+
+// isSmallTalk — savol butunlay bo'sh gapdanmi.
+//
+// HAMMA so'z ro'yxatda bo'lishi shart: "salom, muzlatgich bojini
+// hisobla" bo'sh gap emas.
+func isSmallTalk(text string) bool {
+	fields := strings.Fields(strings.ToLower(text))
+	if len(fields) == 0 || len(fields) > 4 {
+		return false
+	}
+	for _, f := range fields {
+		if !smallTalkWords[trimWord(f)] {
+			return false
+		}
+	}
+	return true
+}
+
+// lookupPhrases — sof ma'lumot o'qish belgilari.
+//
+// ⚠️ Bu yerga TASNIF, IMTIYOZ va KELIB CHIQISH iboralari qo'shilmasin
+// — ular hukm talab qiladi va Full da qolishi shart (yuqoridagi izoh).
+var lookupPhrases = []string{
+	"nimani anglatadi", "nima degani", "nimani bildiradi",
+	"tavsifi", "izohla", "tushuntir",
+	"qaysi modda", "nechanchi modda", "qaysi qonun",
+}
+
+func isLookup(text string) bool {
+	low := strings.ToLower(text)
+	for _, p := range lookupPhrases {
+		if strings.Contains(low, p) {
+			return true
+		}
+	}
+	return false
+}
+
+// trimWord — so'zdan tinish belgilarini oladi.
+func trimWord(s string) string {
+	return strings.Trim(s, ".,!?()[]:;\"«»'`")
+}
+
+// hasCalcIntent — savolda hisob-kitob niyati bormi.
+func hasCalcIntent(text string) bool {
+	for _, f := range strings.Fields(strings.ToLower(text)) {
+		f = strings.Trim(f, ".,!?()[]:;\"«»")
+		f = strings.NewReplacer("ʻ", "'", "ʼ", "'", "'", "'", "'", "'").Replace(f)
+		if calcWords[f] {
+			return true
+		}
+	}
+	return false
 }
 
 // formatLaws — topilgan qonun parchalarini kontekst bloki sifatida shakllantiradi.
@@ -522,6 +758,16 @@ func formatMatches(m hscode.Meta, matches []hscode.Match, exempt map[string][]do
 		c := mt.Code
 		fmt.Fprintf(&b, "%s — %s\n", formatCode(c.Code), c.PathUZ)
 		fmt.Fprintf(&b, "   boj %g%% | QQS %g%%", c.ImportDuty, c.VAT)
+		// KOMBINATSIYALANGAN STAVKA — 13 142 koddan 1 555 tasida.
+		//
+		// Buni tushirib qoldirish JIDDIY xato: jonli sinovda model
+		// 9405 42 003 9 uchun faqat 10% ni hisoblab, bojni 2,56 mln
+		// so'm dedi. Aslida 1 000 kg × $0,5 qat'iy qismi kattaroq —
+		// 5,96 mln. Ya'ni javob ikki baravardan ko'proq kam edi.
+		if c.ImportDutySpecific != nil {
+			fmt.Fprintf(&b, " | ⚠️ QAT'IY QISM: 1 %s uchun $%g",
+				c.ImportDutySpecificUnit, *c.ImportDutySpecific)
+		}
 		// Aksiz nil bo'lsa — bu "yo'q" emas, "noma'lum". Buni ochiq yozamiz,
 		// aks holda model "aksiz yo'q" degan xulosaga kelishi mumkin.
 		if c.Excise != nil {
@@ -721,4 +967,44 @@ func (s *Service) programsBlock(question string) string {
 	b.WriteString("kodga tegishli imtiyozni <HUJJAT_TALABLARI> blokidan ol.\n")
 	b.WriteString("</IMTIYOZ_DASTURLARI>")
 	return b.String()
+}
+
+// codeInText — matndagi raqam-va-bo'shliq ketma-ketliklari.
+// "9405 42 003 9" ni ham, "9405420039" ni ham ushlaydi.
+var codeInText = regexp.MustCompile(`\d[\d ]{6,}\d|\d{10}`)
+
+// promoteExplicit — foydalanuvchi ANIQ yozgan TIF TN kodini ro'yxat
+// boshiga chiqaradi.
+//
+// Yolg'on ishlashdan himoya: nomzod BAZADA BOR bo'lsagina olinadi.
+// Shu tufayli "faktura 2000, transport 150" kabi raqamlar kod deb
+// qabul qilinmaydi — tasodifiy 10 raqam haqiqiy TIF TN kodiga to'g'ri
+// kelishi deyarli mumkin emas.
+func promoteExplicit(store *hscode.Store, text string, matches []hscode.Match) []hscode.Match {
+	for _, raw := range codeInText.FindAllString(text, -1) {
+		digits := strings.ReplaceAll(raw, " ", "")
+		if len(digits) != 10 {
+			continue
+		}
+		c, ok := store.ByCode(digits)
+		if !ok {
+			continue
+		}
+		// Allaqachon birinchi bo'lsa — ish yo'q.
+		if len(matches) > 0 && matches[0].Code.Code == digits {
+			return matches
+		}
+		out := []hscode.Match{{Code: c}}
+		for _, m := range matches {
+			if m.Code.Code != digits {
+				out = append(out, m)
+			}
+		}
+		// Ro'yxat uzayib ketmasin — kontekst byudjeti cheklangan.
+		if len(out) > topCodes {
+			out = out[:topCodes]
+		}
+		return out
+	}
+	return matches
 }

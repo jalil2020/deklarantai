@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"deklarant-ai/backend/internal/users"
 )
 
 //go:embed admin.html
@@ -44,7 +46,7 @@ func (s *Server) adminPage(w http.ResponseWriter, r *http.Request) {
 const (
 	adminCookie   = "admin_session"
 	sessionTTL    = 8 * time.Hour
-	loginMaxTries = 5               // bitta IP dan daqiqasiga
+	loginMaxTries = 5 // bitta IP dan daqiqasiga
 	loginWindow   = time.Minute
 )
 
@@ -156,17 +158,26 @@ func (s *Server) adminRoutes(mux *http.ServeMux) {
 	// Himoyalangan API — har biri protectAdmin bilan o'raladi.
 	mux.Handle("GET /admin/api/stats", s.protectAdmin(s.adminStats))
 	mux.Handle("GET /admin/api/data", s.protectAdmin(s.adminData))
+	mux.Handle("GET /admin/api/settings", s.protectAdmin(s.adminSettings))
 }
 
 // protectAdmin — sessiyani tekshiradi; bo'lmasa 401.
+//
+// Ikki yo'l: panel paroli (cookie) yoki ADMIN rolidagi foydalanuvchi
+// tokeni. Ikkinchisi kerak, chunki parol HAMMA admin uchun bitta —
+// kim nima qilgani bilinmaydi va odam ishdan ketganda parolni
+// almashtirishga to'g'ri keladi.
 func (s *Server) protectAdmin(h http.HandlerFunc) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		c, err := r.Cookie(adminCookie)
-		if err != nil || !s.admin.valid(c.Value) {
-			writeErr(w, http.StatusUnauthorized, "avtorizatsiya kerak")
+		if c, err := r.Cookie(adminCookie); err == nil && s.admin.valid(c.Value) {
+			h(w, r)
 			return
 		}
-		h(w, r)
+		if c, ok := s.identify(r); ok && c.user != nil && c.user.Role == users.Admin {
+			h(w, r)
+			return
+		}
+		writeErr(w, http.StatusUnauthorized, "avtorizatsiya kerak")
 	})
 }
 

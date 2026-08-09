@@ -179,3 +179,29 @@ func TestShortArticlesKept(t *testing.T) {
 		}
 	}
 }
+
+// Haqiqiy huquqiy savol qonun konteksti bilan qaytishi SHART.
+//
+// NEGA TEST: bu yerga ball chegarasi (minRelevance = 16) qo'yilgan edi
+// va u "jarima" kabi eng muhim savollarni kontekstsiz qoldirgan —
+// o'lchangan ball 12,79, ya'ni salomlashish shovqinidan ham past.
+// Chegara olib tashlandi; test uni qaytarib qo'yishdan qo'riqlaydi.
+func TestRealQuestionsKeepLawContext(t *testing.T) {
+	s, err := Load("../../data/laws.json")
+	if err != nil {
+		t.Skip("korpus yo'q:", err)
+	}
+	// Bular deklarantning kundalik savollari — hech biri bo'sh
+	// qaytmasligi kerak.
+	for _, q := range []string{
+		"jarima", "bojxona jarimasi", "qanday jarima bor",
+		"kontrabanda", "penya", "litsenziya", "gumanitar yordam",
+		"deklaratsiya", "tranzit", "aksiz", "imtiyoz", "utilizatsiya",
+		"kontrabanda uchun jazo qanday",
+		"bojxona qiymati qanday aniqlanadi",
+	} {
+		if got := s.Search(q, 3); len(got) == 0 {
+			t.Errorf("%q: qonun parchasi topilmadi — kontekst yo'qoladi", q)
+		}
+	}
+}

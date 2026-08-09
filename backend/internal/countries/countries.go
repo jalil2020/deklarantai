@@ -132,3 +132,13 @@ func (s *Store) FreeTrade() []Country {
 // koeffitsient. BK 300-modda: "ishlab chiqarilgan mamlakati aniqlanmagan
 // tovarlarga nisbatan bojxona bojlarining stavkalari ikki baravar oshiriladi".
 const UnknownOriginMultiplier = 2.0
+
+// List — barcha davlatlar, nomi bo'yicha emas, RO'YXATDAGI tartibda.
+//
+// Tartib manba bazadan keladi va u yerda ko'p ishlatiladiganlar
+// boshida turadi — tanlagich uchun shu qulay.
+func (s *Store) List() []Country {
+	out := make([]Country, len(s.list))
+	copy(out, s.list)
+	return out
+}

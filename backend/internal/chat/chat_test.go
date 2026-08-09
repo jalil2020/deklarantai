@@ -327,10 +327,14 @@ func TestReplyWithoutAPIKey(t *testing.T) {
 	}
 }
 
-// Arzon model FAQAT bazadan hech narsa topilmagan qisqa savolga.
+// MA'NOLI savolning HAMMASI asosiy modelga (Claude Opus) ketishi kerak.
 //
-// Xavf aniq: stavka yoki modda raqami arzonlashtiriladigan joy emas.
-// Shuning uchun bazadan biror narsa topilgan bo'lsa — doim asosiy model.
+// Arzon daraja faqat bazaga aloqasi yo'q qisqa gap uchun qoladi —
+// salomlashish, minnatdorchilik. Ular bojxonaga oid javob emas.
+//
+// Xavf aniq: noto'g'ri hisoblangan boj deklarantga real pul va jarima
+// turadi, noto'g'ri hujjat ro'yxati esa yukni chegarada to'xtatadi.
+// Ikkalasi ham arzonlashtiriladigan joy emas.
 func TestModelRouting(t *testing.T) {
 	cases := []struct {
 		name      string
@@ -338,15 +342,56 @@ func TestModelRouting(t *testing.T) {
 		retrieved bool
 		want      llm.Model
 	}{
-		{"salomlashish", "salom", false, llm.Fast},
-		{"minnatdorchilik", "rahmat", false, llm.Fast},
-		{"baza topildi", "salom", true, llm.Full},
-		{"uzun savol", strings.Repeat("a", shortQuestion+1), false, llm.Full},
-		{"haqiqiy savol", "traktor import qilsam qancha boj", true, llm.Full},
+		// Hisob-kitob
+		{"boj so'raldi", "traktor import qilsam qancha boj", true, llm.Full},
+		{"qqs", "bu kodga QQS qancha", true, llm.Full},
+		{"aksiz", "aksiz stavkasi qanday", true, llm.Full},
+		{"utilizatsiya", "utilizatsiya yig'imi qancha", true, llm.Full},
+		{"hisobla", "shuni hisoblab ber", false, llm.Full},
+
+		// ---- O'LCHANGAN REGRESSIYA ----
+		// Bular Mid ga tushib ketgan va foydalanuvchi sifat pasayganini
+		// sezgan. Hammasi HUKM talab qiladi, kontekstdan o'qish emas.
+		{"tasnif", "elektr skuter qaysi TIF TN kodiga kiradi", true, llm.Full},
+		{"tasnif-2", "quyosh panellari qaysi guruhga kiritiladi", true, llm.Full},
+		{"imtiyoz", "texnologik uskunalarga imtiyoz bormi", true, llm.Full},
+		{"imtiyoz-2", "qanday tovarlar bojdan ozod qilingan", true, llm.Full},
+		{"kelib chiqish", "Qozog'istondan kelgan tovarga ST-1 kerakmi", true, llm.Full},
+		{"kelib chiqish-2", "Rossiyadan kelsa erkin savdo rejimi qo'llanadimi", true, llm.Full},
+		{"bilvosita hisob", "muzlatgich olib kirsam nima bo'ladi", true, llm.Full},
+		{"bilvosita hisob-2", "yuk mashinasini olib kirsam nimalar to'lanadi", true, llm.Full},
+		{"hujjat", "dori vositalari import qilishda litsenziya kerakmi", true, llm.Full},
+		{"hujjat-2", "sut mahsulotlariga sertifikat talab qilinadimi", true, llm.Full},
+
+		// ---- O'RTA daraja: FAQAT sof ma'lumot o'qish ----
+		{"kod izohi", "8705 kodi nimani anglatadi", true, llm.Mid},
+		{"modda", "bu qaysi modda", true, llm.Mid},
+
+		// Kontekst topilmagan bo'lsa o'rta daraja ham berilmaydi.
+		{"kontekstsiz izoh", "nimani anglatadi", false, llm.Full},
+
+		// Faqat bo'sh gap arzon darajada.
+		{"salomlashish", "salom", false, llm.Cheap},
+		{"minnatdorchilik", "rahmat", false, llm.Cheap},
+		{"assalomu alaykum", "Assalomu alaykum!", false, llm.Cheap},
+
+		// Bo'sh gap + ish aralashsa — ARZON EMAS.
+		{"salom + ish", "salom, muzlatgich kodi qaysi", true, llm.Full},
 	}
 	for _, c := range cases {
 		if got := modelFor(c.text, c.retrieved); got != c.want {
-			t.Errorf("%s: model = %v; %v kutilgan", c.name, got, c.want)
+			t.Errorf("%s (%q): model = %v; %v kutilgan", c.name, c.text, got, c.want)
+		}
+	}
+}
+
+// Hisob-kitob so'zi tutuq belgisining har xil ko'rinishida ham tanilishi
+// kerak — foydalanuvchi klaviaturadagi oddiy ' ni bosadi, rasmiy matnda
+// esa U+02BB turadi.
+func TestCalcIntentApostrophes(t *testing.T) {
+	for _, s := range []string{"to'lov qancha", "toʻlov qancha", "yig'im", "yigim"} {
+		if !hasCalcIntent(s) {
+			t.Errorf("%q: hisob-kitob niyati tanilmadi", s)
 		}
 	}
 }
@@ -672,5 +717,136 @@ func TestContactConfigurable(t *testing.T) {
 	}
 	if strings.Contains(got, defaultContact) {
 		t.Error("sukutdagi kanal ham qoldi")
+	}
+}
+
+// Valyuta kursi bloki YOLG'IZ O'ZI "bazadan topildi" hisoblanmasligi kerak.
+//
+// NEGA TEST: kurs bloki deyarli har so'rovga qo'shiladi. U ham sanalsa,
+// `retrieved` hech qachon false bo'lmaydi va arzon daraja O'LIK KOD ga
+// aylanadi. Aynan shu holat ishlab chiqarishda bor edi — o'lchandi:
+// "salom" ham Opus ga ketardi.
+func TestRatesBlockDoesNotCountAsRetrieval(t *testing.T) {
+	codes, err := hscode.Load("../../data/hscodes.json")
+	if err != nil {
+		t.Skip("baza yo'q:", err)
+	}
+	// Kurs manbai BOR — ishlab chiqarishdagi holat.
+	s := New(nil, codes, nil, nil, rates.New(""))
+
+	for _, q := range []string{"salom", "rahmat", "yaxshimisiz"} {
+		msgs, retrieved := s.withRetrieval(t.Context(), []llm.Message{user(q)})
+		if retrieved {
+			t.Errorf("%q: retrieved=true — kurs bloki noto'g'ri sanaldi", q)
+		}
+		if got := modelFor(q, retrieved); got != llm.Cheap {
+			t.Errorf("%q: model = %v; Cheap kutilgan", q, got)
+		}
+		// Kurs baribir kontekstda qolishi kerak — u foydali.
+		if len(msgs) > 0 && !strings.Contains(msgs[0].Content, "KURS") &&
+			!strings.Contains(msgs[0].Content, "kurs") {
+			t.Logf("%q: kurs bloki qo'shilmadi (manba oflayn bo'lishi mumkin)", q)
+		}
+	}
+}
+
+// Suhbatda bir marta hisob-kitob boshlansa, u OXIRIGACHA Full da qoladi.
+//
+// NEGA TEST: davomi qisqa savol bilan keladi — "unda 500 kg bo'lsa-chi?".
+// Unda na hisob so'zi, na kod bor. Faqat oxirgi xabarga qaralsa, javob
+// jimgina arzon modeldan kelardi va foydalanuvchi buni bilmasdi.
+func TestRoutingRemembersCalcIntent(t *testing.T) {
+	s := New(nil, nil, nil, nil, nil)
+
+	history := []llm.Message{
+		user("9405 42 003 9, Xitoydan 1000 kg, faktura $2000, bojni hisobla"),
+		bot("boj 6 046 675 so'm"),
+		user("unda 500 kg bo'lsa-chi?"),
+	}
+	// Davomi O'ZI qaralsa arzon darajaga tushishini tasdiqlaymiz —
+	// test haqiqiy xavfni qo'riqlayotganiga ishonch hosil qilamiz.
+	if got := modelFor("unda 500 kg bo'lsa-chi?", false); got == llm.Full {
+		t.Log("diqqat: davomi o'zi ham Full berdi — test kuchsizlandi")
+	}
+	if got := s.modelOf(history, false); got != llm.Full {
+		t.Errorf("hisob-kitob davomi: model = %v; Full kutilgan", got)
+	}
+}
+
+// Rasm — har doim Full.
+func TestRoutingImageAlwaysFull(t *testing.T) {
+	s := New(nil, nil, nil, nil, nil)
+	h := []llm.Message{user("bu nima?", img(100))}
+	if got := s.modelOf(h, false); got != llm.Full {
+		t.Errorf("suratli savol: model = %v; Full kutilgan", got)
+	}
+}
+
+// Sof ma'lumot o'qish savoli o'rta darajaga tushadi.
+//
+// ⚠️ Ro'yxat ATAYLAB tor. Ilgari "bazadan biror narsa topildimi —
+// demak Mid" degan keng qoida bor edi va u haqiqiy savollarning 76% ini
+// Opus dan Sonnet ga tushirib yuborgan; foydalanuvchi javob sifati
+// pasayganini sezgan. Shuning uchun bu test IKKI tomonni ham tekshiradi:
+// nima Mid ga tushadi va nima TUSHMASLIGI kerak.
+func TestRoutingLookupOnlyGoesMid(t *testing.T) {
+	s := New(nil, nil, nil, nil, nil)
+
+	lookup := []llm.Message{
+		user("8705 kodi nimani anglatadi"),
+	}
+	if got := s.modelOf(lookup, true); got != llm.Mid {
+		t.Errorf("kod izohi: model = %v; Mid kutilgan", got)
+	}
+
+	// Bular HUKM talab qiladi — Full da qolishi shart.
+	for _, q := range []string{
+		"qanday hujjat kerak",
+		"elektr skuter qaysi kodga kiradi",
+		"texnologik uskunalarga imtiyoz bormi",
+		"Qozog'istondan kelsa ST-1 kerakmi",
+		"muzlatgich olib kirsam nima bo'ladi",
+	} {
+		if got := s.modelOf([]llm.Message{user(q)}, true); got != llm.Full {
+			t.Errorf("%q: model = %v; Full kutilgan", q, got)
+		}
+	}
+}
+
+// Bo'sh gapga kontekst QO'SHILMASLIGI va arzon darajaga tushishi kerak.
+//
+// NEGA TEST: qidiruv "salom" ga ham qonun parchasi topadi (so'z ichidan:
+// "salom" ⊂ "salomatlik"). O'lchangan: salomlashishga 13 878 belgi
+// kontekst ≈ $0,039 — haqiqiy huquqiy savoldan ham qimmat. Bir marta bu
+// ball chegarasi bilan hal qilishga urinilgan va u "jarima" kabi
+// haqiqiy savollarni ham kesib yuborgan.
+func TestSmallTalkGetsNoContext(t *testing.T) {
+	s := newService(t)
+
+	for _, q := range []string{"salom", "rahmat", "Assalomu alaykum", "xayr"} {
+		got, retrieved := s.withRetrieval(context.Background(), userMsg(q))
+		if retrieved {
+			t.Errorf("%q: kontekst qo'shildi", q)
+		}
+		if got[0].Content != q {
+			t.Errorf("%q: xabar o'zgardi (%d belgi)", q, len(got[0].Content))
+		}
+		if m := s.modelOf(userMsg(q), retrieved); m != llm.Cheap {
+			t.Errorf("%q: model = %v; Cheap kutilgan", q, m)
+		}
+	}
+
+	// Ish aralashgan xabar bo'sh gap EMAS.
+	for _, q := range []string{
+		"salom, muzlatgich bojini hisobla",
+		"rahmat, endi QQS ni ayting",
+	} {
+		_, retrieved := s.withRetrieval(context.Background(), userMsg(q))
+		if !retrieved {
+			t.Errorf("%q: kontekst qo'shilmadi", q)
+		}
+		if m := s.modelOf(userMsg(q), retrieved); m == llm.Cheap {
+			t.Errorf("%q: arzon darajaga tushdi", q)
+		}
 	}
 }

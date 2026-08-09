@@ -64,10 +64,23 @@ function parseRate(raw) {
     // Sanasi yo'q blok eng quyi ustuvorlikda (bestStart = null).
     if (best && bestStart && (!start || start <= bestStart)) continue
     const pct = (f[3] ?? '').trim().replace(',', '.')
+    // KOMBINATSIYALANGAN STAVKA. Manba blokining tuzilishi:
+    //
+    //   [qonun | boshlanish | tugash | foiz | qat'iy | ? | birlik_kodi | ...]
+    //      0         1          2       3       4      5        6
+    //
+    // Masalan `292|01.06.2025||10|0,5||||||` → 10% va 1 kg uchun 0,5 dollar.
+    // `...|20|0,5||796|...` → 20% va 1 DONA uchun 0,5 dollar.
+    //
+    // Ilgari bu maydonlar `extra` ga yig'ilar, lekin CHIQARILMASDI — ya'ni
+    // 2 464 kodda kalkulyator bojni kam ko'rsatardi.
+    const spec = (f[4] ?? '').trim().replace(',', '.')
     best = {
       percent: pct === '' ? 0 : Number(pct),
+      specific: spec === '' ? null : Number(spec),
+      // Bo'sh birlik kodi — asosiy birlik, ya'ni kilogramm.
+      specificUnit: (f[6] ?? '').trim() || null,
       law: (f[0] ?? '').trim() || null,
-      extra: f.slice(4).map((x) => x.trim()).filter(Boolean),
       since: f[1]?.trim() || null,
     }
     bestStart = start
@@ -142,6 +155,18 @@ function pathOf(chain, field) {
 
 // ---------------------------------------------------------------- chiqarish
 
+/**
+ * Qat'iy stavka qaysi birlikka tegishli.
+ *
+ * Bo'sh kod — ASOSIY birlik, ya'ni kilogramm (manba bazada u alohida
+ * yozilmaydi). Noma'lum kod kelsa raqamning o'zini qaytaramiz: jimgina
+ * "kg" deb yozib qo'yish hisobni buzardi.
+ */
+function specificUnitName(code) {
+  if (!code) return 'kg'
+  return units.get(String(code))?.uz ?? units.get(String(code))?.ru ?? String(code)
+}
+
 const codes = []
 const stats = { noUnit: 0, noDuty: 0, noVat: 0, exciseKnown: 0 }
 
@@ -174,6 +199,15 @@ for (const r of rows) {
     unit: unit?.uz ?? null,
     unit_ru: unit?.ru ?? null,
     import_duty: tp?.percent ?? 0,
+    // Qat'iy qism (dollarda, birlik uchun). Faqat bor bo'lsa yoziladi:
+    // yo'qligini 0 deb yozish "qat'iy qism yo'q" bilan "0 dollar" ni
+    // aralashtirib yuborardi.
+    ...(tp?.specific
+      ? {
+          import_duty_specific: tp.specific,
+          import_duty_specific_unit: specificUnitName(tp.specificUnit),
+        }
+      : {}),
     export_duty: tpEx?.percent ?? 0,
     // Aksiz: manba bazada "an" maydoni bo'sh (joriy TIF TN da hech bir kodda
     // to'ldirilmagan). Uni 0 deb yozish YOLG'ON bo'lardi — "aksiz yo'q" degan
