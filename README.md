@@ -1412,3 +1412,4 @@ Bular bilib turib qoldirilgan — ishlatishdan oldin hisobga olish kerak.
       birida model aksizni "yo'q" deb aytdi — endi 289¹–289³-moddalar
       qamroviga asoslanib, ammo baribir bazadan tasdiqlamay.
 ```
+"# deklarantai" 
