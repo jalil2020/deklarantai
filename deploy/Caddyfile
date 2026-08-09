@@ -1,0 +1,64 @@
+# Deklarant AI — Caddy sozlamasi
+#
+# NEGA CADDY (nginx + certbot emas): HTTPS sertifikatini O'ZI oladi va
+# o'zi yangilaydi, sozlama esa yigirma qatorga sig'adi. Loyihaning
+# qolgan qismidagi "kam bog'liqlik" tamoyiliga mos.
+#
+# ⚠️ Sertifikat DNS domenni SHU SERVERGA ko'rsatgandan keyingina
+# olinadi. A yozuvi yo'q bo'lsa Caddy qayta-qayta urinaveradi va sayt
+# HTTPS da ochilmaydi — bu xato emas, kutish.
+
+deklarantpro.uz, www.deklarantpro.uz {
+	encode zstd gzip
+
+	# ---- API va admin paneli backend'ga
+	@backend path /api/* /admin /admin/*
+	handle @backend {
+		reverse_proxy 127.0.0.1:8080 {
+			# ⚠️ SSE UCHUN MAJBURIY. Chat javobi oqim bilan keladi
+			# (text/event-stream). Buferlash yoqiq bo'lsa, javob
+			# bo'lak-bo'lak emas, oxirida BIRDANIGA chiqadi va
+			# "yozilmoqda" ta'siri yo'qoladi — foydalanuvchi 30–50
+			# soniya bo'sh ekranga qaraydi.
+			flush_interval -1
+
+			# Javob 50 soniyagacha cho'zilishi mumkin.
+			transport http {
+				response_header_timeout 180s
+				read_timeout 180s
+			}
+		}
+	}
+
+	# ---- Qolgani — React ilovasi
+	handle {
+		root * /var/www/deklarant
+		# SPA: yo'l topilmasa index.html beriladi (hash-marshrut).
+		try_files {path} /index.html
+		file_server
+	}
+
+	header {
+		# Sayt boshqa saytning freym ichida ochilmasin.
+		X-Frame-Options "DENY"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		# HSTS — faqat HTTPS ishlaganiga ishonch hosil qilgach yoqing.
+		# Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		-Server
+	}
+
+	# ⚠️ Alohida FAYL jurnali ATAYLAB yo'q.
+	#
+	# Avval `output file /var/log/caddy/deklarant.log` yozilgan edi va
+	# Caddy "permission denied" bilan umuman ko'tarilmadi — papka
+	# caddy:caddy niki bo'lsa ham (unit'dagi ProtectSystem=full va
+	# AppArmor cheklovi). Ya'ni jurnal sozlamasi butun saytni
+	# o'ldirardi.
+	#
+	# Kerak ham emas: Caddy sukut bo'yicha journald ga yozadi va
+	# backend ham o'sha yerga yozadi — ikkalasi bir joyda:
+	#	journalctl -u caddy -f
+	#	journalctl -u deklarant -f
+	# Aylantirish va hajm nazorati journald zimmasida.
+}

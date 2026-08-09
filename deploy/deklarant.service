@@ -1,0 +1,50 @@
+[Unit]
+Description=Deklarant AI — bojxona yordamchisi (backend)
+Documentation=https://github.com/jalil2020/deklarantai
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=deklarant
+Group=deklarant
+WorkingDirectory=/opt/deklarant
+ExecStart=/opt/deklarant/deklarant
+
+# Sirlar SHU YERDA, xizmat faylida EMAS.
+#
+# NEGA: bu fayl git ga tushishi mumkin va `systemctl cat` orqali
+# har qanday foydalanuvchiga ko'rinadi. /etc/deklarant.env esa
+# root'niki va 600 huquqi bilan.
+EnvironmentFile=/etc/deklarant.env
+
+Restart=always
+RestartSec=3
+# Ketma-ket qulash halqasiga tushmasin.
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+# ---- Himoya
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+
+# ⚠️ YOZISH HUQUQI FAQAT SHU YERGA. Dastur data/users.json ga yozadi
+# (ro'yxatdan o'tish, token versiyasi). Qolgan hamma joy faqat o'qish.
+ReadWritePaths=/opt/deklarant/data
+
+# Jurnal journald ga ketadi: journalctl -u deklarant -f
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=deklarant
+
+[Install]
+WantedBy=multi-user.target

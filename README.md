@@ -43,11 +43,319 @@ Deklarant AI/
 │       ├── laws/             # qonun korpusi qidiruvi
 │       ├── chat/             # RAG + suhbat
 │       └── llm/              # Claude API klienti
-└── frontend/                 # React SPA
-    └── src/
-        ├── api.ts            # backend klienti
-        └── components/Chat.tsx   # yagona komponent (rasm yuklash bilan)
+├── frontend/                 # React SPA
+│   └── src/
+│       ├── api.ts            # backend klienti
+│       └── components/       # Chat, Sidebar, LawsPanel, Markdown
+└── android/                  # Native ilova (Kotlin + Compose + Voyager)
+    └── app/src/main/kotlin/uz/deklarant/ai/
+        ├── domain/           # modellar + repozitoriy interfeyslari
+        ├── data/             # DTO, Ktor klienti, rasm siqish
+        └── ui/               # Compose ekranlari + ScreenModel
 ```
+
+Uchala mijoz ham **bitta backend'ga** ulanadi. Android uchun manzil
+qurish vaqtida beriladi (`-PapiBaseUrl=...`) — tafsilotlar
+[android/README.md](android/README.md) da.
+
+## Interfeys tuzilishi
+
+Chapda doimiy menyu, o'ngda bo'lim. Ikki guruh:
+
+| Bo'lim | Nima qiladi |
+|---|---|
+| **Chat** | Suhbat, rasm biriktirish, oqim bilan javob |
+| **Qidiruv** | TIF TN kodini topish — erkin matn yoki ierarxiya |
+| **Kalkulyator** | Boj va soliqlar; utilizatsiya yig'imi (79) |
+| **Risk baholash** | Kod bo'yicha ruxsatnoma, shartli imtiyoz va ma'lum bo'shliqlar |
+| **Qonunlar** | Hujjat → modda → to'liq matn, lex.uz havolasi bilan |
+| — *Saqlangan* — | |
+| **Tarixcha** | O'tgan suhbatlar — ochish, davom ettirish, o'chirish |
+| **Sevimlilar** | Belgilangan kodlar va moddalar |
+
+Menyu keng ekranda oqimdagi ustun (`position: sticky`), tor ekranda esa
+chetdan chiqadigan panel. Ikki holat ATAYLAB boshqa mexanizmda: ilgari
+ikkalasi ham `transform` ga tayanardi va keng ekrandagi bekor qilish
+ishlamay, menyu ekrandan tashqarida qolib ketgan edi.
+
+### Risk baholash
+
+Kod bo'yicha rasmiylashtiruvni **nima to'xtatib qo'yishi** mumkinligini
+ko'rsatadi. Uch manba: `/api/requirements` (litsenziya va sertifikat),
+`/api/exemptions` (shartli imtiyoz), `/api/utilfee` (yig'im qo'llanadimi).
+Ularga hisoblashdagi bilib turib qoldirilgan bo'shliqlar qo'shiladi
+(aksiz, kelib chiqish koeffitsienti).
+
+⚠️ **Raqamli "risk foizi" ATAYLAB YO'Q.** Har bir band bazadagi aniq
+yozuvga tayanadi. Ball qo'yish ishonchli ko'rinardi-yu, ortida hech narsa
+turmasdi — deklarant esa unga qarab qaror qabul qilardi.
+
+`/api/requirements` javobida ro'yxat **to'liq emasligi** aytiladi va bu
+interfeysda ham ko'rsatiladi: manba bazada kod bo'yicha aniq ko'rsatma
+bermaydigan hujjatlar yo'q, ya'ni bo'sh ro'yxat "hech narsa kerak emas"
+degani emas.
+
+Sinaldi: `8703 23 194 0` (yengil avtomobil) → 1 sertifikat, 5 boshqa
+talab (МЮ 2773-4, ПКМ 41…), utilizatsiya yig'imi qo'llanadi.
+
+### Tarixcha va Sevimlilar
+
+Yozuvlar **brauzerda** (`localStorage`) saqlanadi — server tarafda
+saqlash akkaunt va bazani talab qiladi, ular keyingi bosqichda. Chegara
+interfeysda ochiq aytiladi: yozuvlar shu qurilmada qoladi va brauzer
+tozalansa yo'qoladi.
+
+⚠️ **Suratlar saqlanmaydi.** Bitta 1600px surat base64 da ~300 KB,
+brauzer xotirasi esa odatda 5 MB — ikki-uchta suratli suhbat butun
+tarixchani to'ldirib, saqlashni umuman ishdan chiqarardi. Sinaldi:
+50 KB lik surat bilan uchta suhbat → 457 bayt.
+
+Dizayn maketidagi **Bosh sahifa** va **Profil** hozircha qo'shilmadi:
+birinchisi foydalanuvchi ko'rsatkichlarini, ikkinchisi akkauntni talab
+qiladi.
+
+### Qidiruv natijalari
+
+Har kartochkada: kod, nomi, ota-tugun, **boj/QQS stavkasi**, o'lchov
+birligi va imtiyoz nishoni.
+
+⚠️ **"Eng mos" nishoni faqat g'olib YOLG'IZ bo'lganda chiqadi.** O'lchov
+shuni ko'rsatdi: "noutbuk" so'roviga to'rtta kod aynan bir xil ball
+oladi (73,177). Bunday holatda birinchisiga "eng mos" deb yozish qidiruv
+topmagan g'olibni o'ylab topish bo'lardi — deklarant esa shu nishonga
+qarab kod tanlaydi. Teng ball bo'lsa, ro'yxat tepasida nechta kod teng
+kelgani va tartib tasodifiy ekani **ochiq aytiladi**.
+
+Ball yonidagi chiziq ham foiz emas — u eng yaxshi natijaga NISBATAN
+ko'rsatkich (ball IDF asosidagi ochiq shkalada, ehtimollik emas).
+
+### Ierarxiya brauzeri
+
+TIF TN bo'ylab **qidiruvsiz** yurish (Qidiruv bo'limining "Ko'rish" tabi).
+
+**Nega kerak.** Qidiruv foydalanuvchidan tovarni *nomenklatura tilida*
+atashni talab qiladi. Bilmasa — hech narsa topilmaydi: "musor tashuvchi
+mashina" nomenklaturada "maxsus avtotransport", "noutbuk" esa "hisoblash
+mashinalari". Ierarxiya hech qanday atama bilishni talab qilmaydi.
+
+To'rt daraja, har birida ichidagi kodlar soni ko'rsatiladi:
+
+```
+Bo'lim (21)  →  Guruh (96)  →  Tovar pozitsiyasi (4 xonali)  →  Kod
+   XVI            84                    8418                  8418 10 200 1
+```
+
+Kodni bosish chatga tayyor savol qo'yadi (yubormaydi — foydalanuvchi
+qiymat va davlatni qo'shishi kerak).
+
+```
+GET /api/hscode/browse                 → bo'limlar
+GET /api/hscode/browse?section=XVI     → guruhlar
+GET /api/hscode/browse?group=84        → tovar pozitsiyalari
+GET /api/hscode/browse?heading=8418    → kodlar
+```
+
+### Kalkulyator
+
+Tuzilishi GTD ga mos: tepada uch davlat tanlagichi, keyin uch tab
+(Kalkulyator · Hujjatlar · Ierarxiya), kirish maydonlari ikki ustunda,
+natija esa **to'lov kodlari ro'yxati** ko'rinishida.
+
+**Davlat tanlagichlari** (`GET /api/countries`, 254 davlat):
+
+| Grafa | Hisobga ta'siri |
+|---|---|
+| Yuk jo'natuvchi | Yo'q — GTD uchun. Tanlansa qolgan ikkitasini avto-to'ldiradi |
+| **Kelib chiqish** | **Boj koeffitsienti** (BK 300-modda): erkin savdo ×0, EQR ×1, rejimsiz/aniqlanmagan ×2 |
+| Savdo qiluvchi | Yo'q — offshor bo'lsa ogohlantirish |
+
+Koeffitsientni frontend emas, **backend aniqlaydi** — kalkulyator faqat
+davlat kodini yuboradi (`origin_country`). Ro'yxat va qoida bitta joyda.
+Tanlagich ostida rejim darrov ko'rinadi («Erkin savdo — boj olinmaydi»).
+
+Tanlagich — **yozib qidiriladigan kombo** (`CountryCombo.tsx`), oddiy
+`<select>` emas: 254 davlat kod tartibida turadi va Angolani topish uchun
+024 gacha aylantirish kerak edi. Qidiruv kod, o'zbekcha/ruscha nom, ISO
+va sinonimlar bo'ylab («156», «ang», «герман», «de», «XXR» — hammasi
+ishlaydi). Aniq mosliklar oldinda: «de» → Germaniya (ISO), keyingina
+Bangla**de**sh. Har band ostida boj rejimi ko'rinadi, offshor belgi bilan.
+Klaviatura: ↑/↓, Enter, Esc.
+
+Ogohlantirishlar: offshor tomon; kelib chiqish jo'natuvchidan farq
+qilsa — ST-1 talab qilinishi. Jonli sinov (`9405 42 003 9`, 1 000 kg):
+Xitoy → 6 046 675 so'm, Rossiya (erkin savdo) → 0 va QQS ham qayta
+hisoblandi, «aniqlanmagan» → 12 093 350 (ikki baravar, qat'iy qism ham).
+
+**Tab'lar:** Hujjatlar — kod bo'yicha talablar (Risk bilan bitta manba,
+qisqa ko'rinish); Ierarxiya — daraxt tanlangan kod pozitsiyasida
+ochiladi, undan boshqa kod tanlansa kalkulyator o'sha kodga qayta
+yuklanadi (to'liq stavkalar qidiruvdan olinadi — browse bargida qat'iy
+qism yo'q).
+
+**Kod maydoni — YOZGANDA qidiradi** (`CodeCombo.tsx`). Tab qatorining
+o'ng tomonida turadi va ikki xil yozuvni qabul qiladi:
+
+| Yozilgan | Nima bo'ladi |
+|---|---|
+| `8703 23` | Shu pozitsiyadagi kodlar ro'yxati (bo'shliqlar ahamiyatsiz) |
+| `noutbuk` | Nom bo'yicha qidiradi — kodni bilmasa ham |
+
+Har taklifda kod, **boj stavkasi**, kombinatsiyalangan qat'iy qism
+(`$0.5/kg`) va o'lchov birligi ko'rinadi — tanlashdan oldin farqi
+bilinsin. Tanlangach stavkalar darrov tortiladi va hisoblash mumkin.
+Klaviatura: ↑/↓, Enter, Esc; ✕ tozalaydi.
+
+Qidiruv SERVERDA — 13 142 kod brauzerga yuklanmaydi. Har harfda so'rov
+ketmasligi uchun **200 ms kechikish**: sinovda 10 ta ketma-ket
+o'zgarishga atigi **1 ta so'rov** ketdi. Sekin kelgan eski javob
+yangisini bosib ketmasligi uchun so'rovlar raqamlanadi.
+
+`/api/hscode/search` ga `limit` qo'shildi (sukut 5, taklif ro'yxatiga 12,
+yuqori chegara 20) — butun bazani tortib bo'lmasin.
+
+⚠️ Ierarxiyadan kelgan **10 xonali kod AYNAN topilishi shart** — yo'q
+bo'lsa xato chiqadi, "yaqinini" jimgina yuklamaydi: boshqa kod boshqa
+stavka degani. Sinovda shu qoida foydali chiqdi: `8703231940` (eski
+nomenklatura kodi) TIF TN 2025 da YO'Q — haqiqiysi `8703231941`/…49.
+
+Backend `matches: null` qaytarganda (hech narsa topilmasa) frontend
+yiqilardi — `?? []` bilan tuzatildi (CalcPage va SearchPage).
+
+To'liq sinov (8703 23 194 1, 1 500 sm³, $20 000, kurs 12 093,35):
+yig'im 618 000 (1,5×BRV) · boj 36 280 050 (15%) · QQS 33 377 646 ·
+utilizatsiya 49 440 000 (120×BRV) → **jami 119 715 696 so'm**.
+
+```
+10. Rasmiylashtiruv yig'imi   1–25 BRV              412 000 so'm  ☑
+12. Bojxona nazorati                                103 000 so'm  ☑
+20. Bojxona boji              [10]% $0.5 | kg     6 046 675 so'm  ☑
+21. Qo'shimcha bojxona boji   [ 0]%                          –
+27. Aksiz solig'i             [  ]% ●                        –
+29. QQS                       [12]%               3 845 685 so'm  ☑
+79. Utilizatsiya yig'imi                                     –
+    Bojxona qiymati                              26 000 703 so'm
+    Jami to'lovlar                               10 407 360 so'm
+```
+
+**Uchta qoida:**
+
+1. **Barcha kodlar HAR DOIM ro'yxatda.** Qo'llanmaydigani xiralashadi va
+   `–` bo'ladi. Kodni ro'yxatdan olib tashlash "biz uni hisobga olmadik"
+   bilan "u bu tovarga tegishli emas" ni farqlab bo'lmaydigan holga
+   keltirardi — deklarant esa GTD da har bir kod bo'yicha javob beradi.
+
+2. **Stavka qatorda tahrirlanadi.** Aksiz stavkasi bazada yo'q, shuning
+   uchun uni faqat foydalanuvchi kirita oladi. Bo'sh stavka yonida
+   **yashil nuqta** — "noma'lum". `0%` esa noma'lum EMAS: bu "to'lov
+   yo'q" degan javob.
+
+3. **Qatorni o'chirish — SERVERDA qayta hisoblanadi**, jadvaldan
+   ayirish bilan emas. QQS bazasi bojxona qiymati + boj + aksizdan
+   iborat (SK 254-modda), shuning uchun bojni ayirib qo'yish QQS ni
+   eski, katta bazada qoldirardi. Sinaldi: bojni o'chirganda QQS
+   3 845 685 → 3 120 084 ga tushdi.
+
+   > To'lovni chiqarish uchun **huquqiy asos** kerak (imtiyoz, rejim).
+   > Shuning uchun biror qator o'chirilsa, ro'yxat ostida ogohlantirish
+   > chiqadi.
+
+**Faktura avtomatik:** birlik narxi × og'irlik. Foydalanuvchi fakturani
+o'zi tergan bo'lsa, ustidan yozilmaydi.
+
+**Miqdor maydoni** kodda qo'shimcha o'lchov birligi bo'lmasa o'chiq
+turadi (`—`) — u faqat kg da o'lchanadigan tovar ekanini bildiradi.
+
+Backend allaqachon bor edi (`duty/calculate`, `utilfee/calculate`), lekin
+frontend uni **umuman chaqirmasdi** — `api.ts` dagi `calculateDuty` o'lik
+kod bo'lib turgan edi.
+
+Sinaldi: manba etalon holati interfeys orqali **aynan** mos keldi —
+yig'im 10 300 000, QQS 1 821 258 510, jami 1 831 558 510 so'm.
+
+### Kombinatsiyalangan boj stavkasi
+
+Stavka «10%, lekin 1 kg uchun 0,5 dollardan kam emas» ko'rinishida
+bo'ladi. **13 142 koddan 1 555 tasida** shunday.
+
+⚠️ **Bu ma'lumot ilgari yo'qolardi.** `tools/extract-hscodes.mjs` manba
+blokidagi qat'iy qismni o'qir, lekin **chiqarmasdi** — ya'ni kalkulyator
+o'sha kodlarda bojni kam ko'rsatardi. Farq kichik emas: 1 000 000 so'mlik
+1 000 kg tovarda **100 000** o'rniga **6 046 675 so'm**.
+
+Manba blokining tuzilishi (manba `good.tp`):
+
+```
+[qonun | boshlanish | tugash | foiz | qat'iy | ? | birlik_kodi | ...]
+   292   01.06.2025             10     0,5          (bo'sh = kg)
+```
+
+Qat'iy qism birligi: kg (796 kod), dona (365), litr (270), juft (91),
+m² (29), 1000 dona (4).
+
+> ⚠️ **Birlashtirish qoidasi huquqiy jihatdan tasdiqlanmagan.** Manbada
+> faqat ikki raqam bor, ular qanday qo'shilishi yozilmagan. **Kattasi**
+> olinadi («…dan kam emas» shakli) — bu EOII va O'zbekiston amaliyotida
+> odatiy. Har holda bu hozirgidan yomon emas: ilgari qat'iy qism umuman
+> hisobga olinmasdi, ya'ni natija **har doim** kam chiqardi.
+>
+> Natijada qaysi qism qo'llangani va ikkinchisi qancha bo'lishi **ochiq
+> yoziladi** — deklarant o'zi tekshira oladi.
+
+Kalkulyator qat'iy qismli kodda **miqdor** so'raydi. Miqdor yoki USD
+kursi berilmasa, faqat foizli qism hisoblanadi va qatorga ⚠️ izoh
+qo'yiladi — jim qolmaydi.
+
+⚠️ Ikki ogohlantirish sahifada **doimiy ko'rinadi**:
+
+- **Aksiz faqat foizda.** Aroq, sigaret, benzinda stavka qat'iy summa
+  (so'm/litr) — bunday tovarni kalkulyator hisoblay olmaydi.
+- **Yig'im shkalasi dollarda.** USD kursisiz yig'im 0 bo'lib qolardi va
+  jami summa kam chiqardi. Kurs bo'sh qoldirilsa Markaziy bankdan
+  olinadi; xohlasa qo'lda ham kiritish mumkin.
+
+**Bojxona ko'rigi (12-kod)** ham qo'shildi: ish vaqtida 0,25×BRV/soat,
+ish vaqtidan tashqari 2×BRV/soat. Backend buni allaqachon hisoblardi,
+interfeysda esa maydon yo'q edi — ya'ni qator hech qachon chiqmasdi.
+
+### Qonunlar bo'limi
+
+Qonun korpusi bo'ylab ko'rish:
+
+```
+Hujjat (89)  →  Modda (1405)  →  To'liq matn
+```
+
+Hujjatlar **parchalar soni bo'yicha** tartiblangan, alifbo bo'yicha emas:
+deklarantga avvalo yirik hujjatlar kerak, shuning uchun Bojxona kodeksi
+(509 parcha) ro'yxat boshida turadi.
+
+Moddaning to'liq matni panelda ko'rsatiladi, yonida ikkita amal:
+**Chatda tushuntir** (chatga savol qo'yadi) va **lex.uz** (rasmiy manba).
+
+```
+GET /api/laws/browse            → hujjatlar
+GET /api/laws/browse?doc=39534  → moddalar
+GET /api/laws/browse?doc=39534&i=0 → to'liq matn
+```
+
+> Ro'yxatlarda faqat matn **boshi** yuboriladi (160 belgi). Bitta kodeksda
+> 500 dan ortiq modda bor — to'liq matn yuzlab kilobayt bo'lardi va
+> panelga baribir sig'masdi (`TestLawsBrowseDrillsDown` buni tekshiradi).
+
+**Ma'lumot manbai.** Uchta darajaning ma'lumoti allaqachon bor edi:
+`hscodes.json` da har kodda `section` va `group` maydonlari, tovar
+pozitsiyasi sarlavhasi esa `path` ning bosh bo'g'ini. Yetishmagani —
+bo'lim va guruh **nomlari**; ular `tools/extract-taxonomy.mjs` orqali
+manba bazadan (`good` jadvali, `parent` daraxti) ajratilib
+`data/taxonomy.json` ga yoziladi.
+
+> Taksonomiya **ixtiyoriy**: fayl bo'lmasa brauzer raqamlarni ko'rsatadi,
+> ishlashdan to'xtamaydi (`TestBrowseWorksWithoutTaxonomy`).
+
+Extraktordagi ikkita nozik joy — ikkalasi ham manbadagi nomuvofiqlik:
+kirill **homoglif** (`ХХI` dagi Х — U+0425, lotin X emas) va sarlavha
+ichidagi **yangi qator** (regexga `s` bayrog'i kerak). Ularsiz XXI bo'lim
+va bir necha guruh tanilmay qolgan edi.
 
 ## Ma'lumotlar bazasi (TIF TN)
 
@@ -180,6 +488,50 @@ bekor qilingan yozuv chiqarildi.
 ⚠️ Bu ro'yxatda **kodga aniq bog'lanmagan** hujjatlar bo'lmaydi. Chat buni
 ochiq aytadi: bo'lim ko'rsatilmagan bo'lsa, bu "talab qilinmaydi" degani emas.
 
+## Ishlab chiqarish — deklarantpro.uz
+
+Joylashtirilgan: **https://deklarantpro.uz** (DigitalOcean, Ubuntu 24.04,
+1 vCPU / 512 MB / 10 GB, NYC1).
+
+```
+Caddy :443  ──┬── /api/*, /admin*  →  127.0.0.1:8080  (deklarant.service)
+              └── qolgani          →  /var/www/deklarant  (React)
+```
+
+| Fayl | Vazifasi |
+|---|---|
+| `deploy/setup.sh` | Serverni BIR MARTA sozlaydi (serverda) |
+| `deploy/release.sh` | Yangi versiyani chiqaradi (mahalliy) |
+| `deploy/Caddyfile` | HTTPS + proksi + SPA |
+| `deploy/deklarant.service` | systemd, cheklangan huquqlar |
+
+Yangi versiya chiqarish — bitta buyruq:
+
+```bash
+bash deploy/release.sh
+```
+
+Backend **kross-kompilyatsiya** qilinadi (`CGO_ENABLED=0 GOOS=linux`), ya'ni
+serverga Go o'rnatish shart emas va natija 7 MB statik fayl.
+
+⚠️ **512 MB xotira — tor joy.** O'lchangan: Ubuntu ~110 MB, backend
+80 MB, Caddy ~30 MB → 243/458 MB. Ikkita himoya qo'yilgan:
+`GOMEMLIMIT=250MiB` (GC qattiqroq ishlaydi, OOM o'rniga sekinlashish)
+va **1 GB swap** (DigitalOcean da sukut bo'yicha yo'q).
+
+⚠️ **`users.json` hech qachon yuborilmaydi** — u serverda yasaladi va
+parol xeshlari bor. Mahalliy nusxa bilan almashtirilsa hamma
+foydalanuvchi yo'qolardi.
+
+⚠️ **294 MB manba sqlite serverga chiqmaydi** — u faqat JSON
+yasash uchun kerak.
+
+Jurnal:
+
+```bash
+ssh -i ~/.ssh/deklarant_deploy root@deklarantpro.uz journalctl -u deklarant -f
+```
+
 ## Ishga tushirish
 
 ### 1. Backend (Go)
@@ -196,13 +548,24 @@ go run .
 Server `http://localhost:8080` da ishga tushadi. Kalit o'rnatilmasa, HS qidiruv
 va kalkulyator ishlaydi, faqat chat o'chiq bo'ladi.
 
+> ⚠️ `backend/.env.example` — **qo'llanma, konfiguratsiya emas**. Loyihada
+> tashqi bog'liqlik yo'q va hech qanday `.env` yuklovchi ishlatilmaydi
+> (`os.Getenv` xolos), ya'ni faylni `.env` deb nusxalash HECH NARSA
+> qilmaydi. Qiymatlarni haqiqiy muhitga bering (yuqoridagi buyruqlar
+> yoki systemd `EnvironmentFile`). To'liq ro'yxat o'sha faylda va
+> `/admin` → «Sozlamalar» da; `TestEnvExampleCoversRegistry` ikkovi
+> ajralib ketmasligini qo'riqlaydi.
+
 | Muhit o'zgaruvchisi | Majburiy | Tavsif |
 |---|---|---|
 | `ANTHROPIC_API_KEY` | chat uchun | Bo'lmasa chat o'chiq, qolgani ishlaydi |
-| `ANTHROPIC_MODEL` | yo'q | Sukut bo'yicha `claude-opus-4-8` |
+| `ANTHROPIC_MODEL` | yo'q | Asosiy daraja, sukut `claude-opus-4-8` |
+| `ANTHROPIC_MID_MODEL` | yo'q | O'rta daraja, sukut `claude-sonnet-5` |
 | `ANTHROPIC_API_URL` | yo'q | Korporativ shlyuz yoki testdagi soxta server |
+| `GLM_API_KEY` | yo'q | Arzon provayder (Z.ai). Bo'lmasa hammasi Claude da — "Xarajat nazorati" ga qarang |
 | `PORT` | yo'q | Sukut bo'yicha `8080` |
-| `HSCODE_DATA`, `LAWS_DATA`, `DOCS_DATA` | yo'q | Ma'lumot fayllari yo'li |
+| `HSCODE_DATA`, `LAWS_DATA`, `DOCS_DATA`, `COUNTRIES_DATA` | yo'q | Ma'lumot fayllari yo'li |
+| `TAXONOMY_DATA` | yo'q | Bo'lim/guruh sarlavhalari (sidebar). Bo'lmasa brauzer raqamlarni ko'rsatadi |
 
 ## Kelib chiqish davlati va boj
 
@@ -405,19 +768,46 @@ Kesh: tarixiy kurs muddatsiz (u o'zgarmaydi), bugungisi kun oxirigacha.
 
 ## Admin paneli
 
-`http://<host>/admin` — parol bilan himoyalangan panel: foydalanish
-statistikasi (o'qish) va ma'lumot bazalari holati. Bitta o'z-o'zicha HTML
-sahifa, Go ichiga `embed` bilan qo'yilgan — alohida build yo'q.
+`http://<host>/admin` — parol bilan himoyalangan panel. Bitta o'z-o'zicha
+HTML sahifa, Go ichiga `embed` bilan qo'yilgan — alohida build yo'q.
+Uch tab:
 
 ```bash
 ADMIN_PASSWORD="kuchli-parol" go run .   # panelni yoqadi
 ```
 
-**Ko'rsatadi:**
-- Sarf jurnali — model bo'yicha token (kirish/chiqish/kesh), so'nggi
-  so'rovlar, API so'rovlar soni, ishlash vaqti
-- Bazalar holati — kodlar, qonun korpusi (lex.uz havola qamrovi bilan),
-  hujjat talablari, davlatlar; har birining `rates_as_of` sanasi
+**1. Foydalanish** — model bo'yicha token (kirish/chiqish/kesh), so'nggi
+so'rovlar, API so'rovlar soni, ishlash vaqti. Claude va GLM ulushini shu
+yerdan ko'rasiz.
+
+**2. Ma'lumot** — bazalar holati: kodlar, qonun korpusi (lex.uz havola
+qamrovi bilan), hujjat talablari, davlatlar; har birining `rates_as_of` sanasi.
+
+**3. Sozlamalar** — **21 ta muhit o'zgaruvchisi** bir joyda
+(`internal/api/settings.go`), guruhlangan: AI provayderlari, cheklovlar,
+server, ma'lumot manbalari, tashqi xizmatlar. Har biri uchun:
+
+| Ustun | Ma'nosi |
+|---|---|
+| Amaldagi qiymat | Server AYNAN nima bilan ishlayapti |
+| Manba | `muhit` (o'rnatilgan) yoki `sukut` (kodda yozilgan) |
+| O'zgarishi | `darrov` yoki `qayta ishga tushirish` kerak |
+
+Tepada ogohlantirishlar: kalit sozlanmagani, `TRUST_PROXY` yoqilgani,
+parol qisqaligi, ikkala limit ham o'chirilgani, HTTPS bo'lmagan endpoint.
+
+> ⚠️ **Maxfiy qiymatlar hech qachon qaytarilmaydi** — na to'liq, na qisman
+> (oxirgi 4 belgi ham emas). Faqat "sozlangan / sozlanmagan" holati. Panel
+> parol bilan himoyalangan bo'lsa ham, kalitni JSON ga chiqarish uni
+> tarqatish uchun yana bir kanal ochib berardi: brauzer tarixi, proksi
+> jurnali, ekran surati. `TestAdminSettingsNeverLeaksSecrets` shuni
+> qo'riqlaydi.
+
+> Sozlamalar **faqat o'qish uchun**. Panelga yozish qo'shilmadi: qiymatlarning
+> ko'pi ishga tushishda bir marta o'qiladi (klient o'shanda yasaladi), ya'ni
+> "saqlash" tugmasi ba'zi sozlamada ishlab, ba'zisida jimgina ishlamasdi.
+> Bundan tashqari model tanlashni veb orqali o'zgartirish audit izisiz
+> qolardi.
 
 ⚠️ **FAIL CLOSED — eng muhim xususiyat.** `ADMIN_PASSWORD` o'rnatilmagan
 bo'lsa, `/admin` yo'llari **umuman mavjud emas** (404, 401 ham emas). Bu
@@ -442,17 +832,179 @@ foydalanuvchi hisoblari yo'q.
 |---|---|
 | `ADMIN_PASSWORD` | Panel paroli (bo'sh = panel o'chiq) |
 
+## Foydalanuvchilar va rollar
+
+`internal/users`. Ro'yxatdan o'tish, kirish, chiqish va to'rt rol.
+
+```
+POST /api/auth/register  {login, password, name?, role?}  → token + user
+POST /api/auth/login     {login, password}                → token + user
+POST /api/auth/logout                                     → tokenlarni bekor qiladi
+GET  /api/auth/me                                         → joriy foydalanuvchi
+GET  /api/auth/roles                                      → rollar, kvota va uslub
+```
+
+**Chat KIRISH TALAB QILADI.** Anonim tokenni istalgan skript bir chaqiruv
+bilan oladi — u xarajatni hech kimga bog'lamaydi. Qidiruv, kalkulyator,
+risk va qonunlar LLM ga bormaydi, ya'ni **kirishsiz ham ochiq**.
+
+Interfeysda kirish **modal oyna** — alohida sahifa emas. Chat joyida
+qoladi va kiritish maydonida ishora turadi: *"Savol berish uchun kiring —
+shu yerga bosing"*. Maydonga (yoki yuborish tugmasiga, rasm biriktirishga,
+tayyor savolga) bosilsa oyna ochiladi.
+
+> Ilova nima qila olishini ko'rsatmasdan kirishga majburlash — savolga
+> javob bermasdan pul so'ragandek. Shuning uchun chat ko'rinib turadi,
+> faqat yozish yopiladi.
+
+Maydon `disabled` emas, **`readOnly`**: o'chirilgan maydon bosishni
+umuman qabul qilmaydi, ya'ni foydalanuvchi bosib ko'radi-yu, hech narsa
+bo'lmaydi.
+
+### Rollar
+
+Rol UCH narsani belgilaydi. Ro'yxat ataylab qisqa: ishlamaydigan
+"ruxsatlar" xavfsizlik tuyg'usini beradi-yu, hech narsani himoya qilmaydi.
+
+| Rol | Chat uslubi | Kuniga | Izoh |
+|---|---|---|---|
+| `DECLARANT` | deklarant | 200 | Sukut rol |
+| `BUSINESS` | tadbirkor | 30 | Sodda javob |
+| `INSPECTOR` | deklarant | 300 | Bugun imkoniyatlari deklarantniki bilan bir xil |
+| `ADMIN` | deklarant | 1000 | `/admin` paneliga kirish |
+
+⚠️ **ADMIN ro'yxatdan o'tishda berilmaydi** — aks holda kim xohlasa admin
+bo'lardi. Istisno faqat **birinchi** foydalanuvchi: yangi o'rnatmada
+birorta admin bo'lmasa, rol tayinlash imkoni ham bo'lmasdi.
+
+### Saqlash va parollar
+
+Ombor — `data/users.json` (`USERS_DATA` bilan sozlanadi). Baza emas: barcha
+ma'lumot allaqachon JSON fayllarda va loyihada birorta tashqi bog'liqlik
+yo'q. `Store` interfeys ortida, ya'ni bazaga o'tilganda handler'lar
+o'zgarmaydi.
+
+- Parol — **PBKDF2-SHA256, 210 000 iteratsiya**, har foydalanuvchiga
+  alohida tuz (`crypto/pbkdf2`, standart kutubxona)
+- Solishtirish doimiy vaqtda; yo'q foydalanuvchi uchun ham xesh
+  hisoblanadi — javob vaqti qaysi loginlar borligini oshkor qilmasin
+- "Login topilmadi" va "parol noto'g'ri" — **bir xil javob**
+- Telefon raqami normallashtiriladi: `+998 90 123-45-67` va
+  `+998901234567` bir xil akkaunt
+
+⚠️ `data/users.json` **git ga tushmaydi** (`.gitignore`) — unda parol
+xeshlari va telefon raqamlari bor.
+
+### Token
+
+Token **serverda saqlanmaydi**, imzolangan: `u1.<id>.<versiya>.<muddat>.<imzo>`.
+Shu tufayli server qayta ishga tushganda seanslar yo'qolmaydi.
+
+"Chiqish" shundan qiyinlashadi — imzolangan tokenni o'chirib bo'lmaydi.
+Yechim: foydalanuvchidagi **versiya raqami** token ichida ham bor va
+chiqishda oshiriladi, ya'ni barcha qurilmadagi eski tokenlar darrov
+kuchini yo'qotadi. Sinaldi: chiqishdan keyin o'sha token `401`.
+
+### Kvota endi foydalanuvchiga bog'langan
+
+Ilgari limit IP bo'yicha edi: bitta ofisdagi yigirma kishi bir-birining
+kvotasini yeb qo'yardi, mobil tarmoqdagi odam esa IP almashtirib
+chegarani aylanib o'tardi. Endi kirgan foydalanuvchining kvotasi
+**rolidan** olinadi.
+
+Parol qabul qiladigan yo'llar (`login`, `register`, `session`) IP bo'yicha
+cheklangan. `me` va `logout` **ataylab cheklanmagan**: ular amaldagi
+tokenni talab qiladi, ya'ni taxmin qilinadigan narsa yo'q — cheklansa,
+sahifani bir necha marta yangilagan odam `429` olardi.
+
+## Mijozni tanish (API yopiq)
+
+`internal/api/auth.go`. Chat endpointlari (`/api/chat`, `/api/chat/stream`)
+**tanilgan mijozni talab qiladi**; belgisiz so'rovga `401` qaytadi va LLM
+ga umuman bormaydi.
+
+Belgi `X-API-Key` sarlavhasida keladi va ikki turdagi bo'lishi mumkin:
+
+| Tur | Manba | Kim uchun |
+|---|---|---|
+| **API kaliti** | `API_KEYS` muhit o'zgaruvchisi (`nom:sir` ro'yxati) | Mobil ilova, hamkorlar, server-server |
+| **Anonim token** | `POST /api/session` — HMAC bilan imzolangan, muddati bor | Brauzer |
+
+```bash
+TOK=$(curl -s -X POST localhost:8080/api/session | jq -r .token)
+curl -X POST localhost:8080/api/chat -H "X-API-Key: $TOK" -d '{"messages":[...]}'
+```
+
+⚠️ **Bu autentifikatsiya EMAS.** Anonim tokenni istalgan odam bir chaqiruv
+bilan olishi mumkin. Bu qat'iy to'siq emas, **tezlik cheklovi**:
+
+- boshqa saytlar API ni to'g'ridan-to'g'ri o'z sahifasiga ulay olmaydi
+- har mijozga barqaror belgi beriladi (kelajakda kvota shunga bog'lanadi)
+- akkauntlar kelganda o'sha joyga foydalanuvchi seansi qo'yiladi —
+  endpointlar va mijozlar o'zgarmaydi
+
+Brauzerdagi belgi ham **sir emas** — uni sahifadan olib qo'yish mumkin.
+Haqiqiy himoya akkauntlar bilan keladi.
+
+**Bepul qism ochiq qoladi:** qidiruv, boj kalkulyatori, TIF TN brauzeri va
+qonunlar LLM ga umuman bormaydi, ya'ni xarajat yasamaydi. Qidiruvdagi AI
+izohi (`use_ai`) esa tanilmagan mijozda **rad etilmaydi, o'chiriladi** —
+kodlar baribir topiladi.
+
+| O'zgaruvchi | Sukut | Tavsif |
+|---|---|---|
+| `API_KEYS` | — | `nom:sir` ro'yxati, vergul bilan |
+| `CLIENT_TOKEN_SECRET` | tasodifiy | Token imzosi. Bir nechta nusxada **bir xil** bo'lishi shart |
+| `CLIENT_TOKEN_TTL` | `24h` | Anonim token muddati |
+| `ALLOWED_ORIGINS` | — | CORS ro'yxati. Bo'sh = hammasi (`*`) |
+
+⚠️ `CLIENT_TOKEN_SECRET` berilmasa har ishga tushishda tasodifiy yasaladi
+— tokenlar qayta ishga tushganda kuchini yo'qotadi. Mijozlar buni sezmaydi
+(401 da bir marta avtomatik yangilaydi), lekin bir nechta server nusxasi
+bo'lsa tokenlar umuman ishlamaydi.
+
 ## Xarajat nazorati
 
-Har bir chat so'rovi pul turadi, shuning uchun to'rt qatlam qo'yilgan.
+Har bir chat so'rovi pul turadi, shuning uchun besh qatlam qo'yilgan.
 Sozlash — muhit o'zgaruvchilari bilan.
 
-**1. Prompt keshi.** Tizim ko'rsatmasi ~6 000 belgi va har so'rovda bir xil.
-Unga `cache_control: ephemeral` biriktiriladi va keshdan o'qish narxi asl
-narxning ~10%i. O'lchangan: har so'rovda **3 543 token keshdan** o'qiladi.
+**1. Prompt keshi.** Tizim ko'rsatmasi ~7 900 belgi (o'lchangan:
+`TestSystemPromptStaysCacheable`) va har so'rovda bir xil. Unga
+`cache_control: ephemeral` biriktiriladi va keshdan o'qish narxi asl
+narxning ~10%i. O'lchangan: **5 035 token** keshga tushadi.
 
 Retrieval bloklari ataylab **oxirgi foydalanuvchi xabariga** qo'shiladi —
 ular o'zgaruvchan, shuning uchun keshga tushmaydi va keshni buzmaydi ham.
+
+⚠️ Sukut kesh muddati — **5 daqiqa**. Kesh barcha foydalanuvchilar uchun
+umumiy, lekin 5 daqiqada bironta so'rov kelmasa u yo'qoladi va keyingi
+so'rov keshni qayta yozadi — bu oddiy kirishdan 1,25 barobar QIMMAT.
+Ya'ni siyrak trafikda kesh foyda emas, zarar keltiradi.
+`ANTHROPIC_CACHE_TTL=1h` buni tuzatadi (yozish 2 barobar, o'qish o'sha-o'sha
+0,1 barobar) — soatiga bitta so'rov bo'lsa ham keshni tirik saqlaydi.
+
+Bu faraz emas, **jonli o'lchov** (server jurnalidan):
+
+| So'rov | Oralik | Keshga yozildi | Keshdan o'qildi |
+|---|---|---|---|
+| 1 | — | 5 035 | 0 |
+| 2 | 9 daq | 5 035 | 0 |
+| 3 | 1 daq | 0 | **5 035** |
+
+Ya'ni mexanizm ishlaydi, muddat esa yetmaydi: 9 daqiqa oraliqda kesh
+har safar QAYTA yozildi va bir marta ham o'qilmadi — sof zarar.
+Bir daqiqa oraliqda esa to'liq o'qildi. Trafik siyraklashguncha
+`ANTHROPIC_CACHE_TTL=1h` yoqilgani ma'qul.
+
+> Ko'rsatma qisqartirilsa kesh **xato bermasdan** o'chadi — so'rovlar
+> shunchaki qimmatlashadi. `TestSystemPromptStaysCacheable` shu chegarani
+> qo'riqlaydi.
+
+**Xabarlar keshlanmaydi va bu tuzatib bo'lmaydigan holat emas, lekin
+hozircha shunday:** retrieval faqat oxirgi xabarga qo'shiladi, keyingi
+navbatda esa o'sha xabar mijozdan xom holda qaytib keladi — prefiks
+o'zgaradi va kesh yaroqsiz bo'ladi. To'liq yechim — suhbatni **serverda**
+saqlash (akkauntlar bilan birga keladi).
 
 **2. Kontekst byudjeti** (`maxContext = 24 000` belgi). O'lchov shuni
 ko'rsatdi: "salom" so'zi **57 KB** kontekst yasagan edi — sabab, qonun
@@ -464,13 +1016,97 @@ kafolatlaydi. Sig'magan parchalar borligi kontekstda **ochiq yoziladi**.
 > 19,2 ball olgan — farq juda kichik va chegara foydali natijalarni ham
 > kesib yuborardi. Byudjet sifat haqida qaror qabul qilmaydi.
 
-**3. Arzon model.** Bazadan hech narsa topilmagan va 120 belgidan qisqa
-savol (salomlashish, "nima qila olasan") Haiku ga yo'naltiriladi.
-O'lchangan: "rahmat" → Haiku, 2 879 token, 8 s (Opus da 21–28 s).
+**3. Model darajasi — UCHTA.** Tanlov savol QIYINLIGIGA emas, **xato
+narxiga** qarab qilinadi: qiyinlikni javobdan oldin o'lchab bo'lmaydi,
+xavfni esa bo'ladi.
 
-> ⚠️ Bazadan biror narsa topilgan bo'lsa — **doim** asosiy model. Stavka,
-> modda raqami va hisob-kitob arzonlashtiriladigan joy emas.
+**SUKUT HOLATDA HAMMA SO'ROV `ANTHROPIC_MODEL` GA KETADI** — bo'sh gap
+ham. Uchala daraja mavjud, lekin ikkitasi o'chiq va asosiy modelga
+qaytadi.
 
+| Daraja | Sukut model | Qachon (yoqilgan bo'lsa) |
+|---|---|---|
+| `Full` | `claude-opus-4-8` | hamma narsa |
+| `Mid` | — (**o'chiq**) | faqat sof ma'lumot o'qish: «bu kod nimani anglatadi» |
+| `Cheap` | — (**o'chiq**) | faqat bo'sh gap: «salom», «rahmat» |
+
+Ishga tushishda amaldagi holat jurnalga yoziladi va uni yashirib
+bo'lmaydi:
+
+```
+Modellar — hamma so'rov: claude-opus-4-8
+```
+
+Biror daraja yoqilgan bo'lsa, o'sha qatorda ⚠️ bilan ko'rsatiladi —
+GLM ham (`TestAllTiersUseMainModelByDefault`, `TestTiersReportsOverrides`,
+`TestTiersReportsGLM`).
+
+⚠️ **Yagona JIM yo'l — `ANTHROPIC_API_URL`.** Manzil boshqa shlyuzga
+qo'yilsa, so'rov tanasida `claude-opus-4-8` yozilgan bo'lsa ham,
+javobni haqiqatda qaysi model berganini kod tekshira olmaydi. Sarf
+jurnali SO'RALGAN nomni yozadi, javob berganini emas. Shuning uchun
+bu o'zgaruvchi ishlab chiqarishda rasmiy manzilda qolishi kerak.
+
+Arzonlashtirish — OCHIQ TANLOV:
+
+```bash
+ANTHROPIC_MID_MODEL=claude-sonnet-5              # ma'lumot savollari
+ANTHROPIC_FAST_MODEL=claude-haiku-4-5-20251001   # bo'sh gap
+```
+
+> Hisob-kitob va rasm arzonlashtiriladigan joy emas: noto'g'ri boj
+> deklarantga jarima turadi. Shubha bo'lganda daraja **yuqoriga**
+> qarab hal qilinadi.
+
+⚠️ **QOIDA TESKARI QILINDI — bir marta xato qilingan joy.**
+Avval qoida shunday edi: *«bazadan biror narsa topildimi — demak model
+faqat faktni qayta ifodalaydi, o'rta daraja yetadi»*. Bu joriy etilgach
+foydalanuvchi javob sifati pasayganini sezdi va o'lchov sababni
+tasdiqladi: **25 ta haqiqiy savoldan 19 tasi (76%) Opus dan Sonnet ga
+tushib ketgan.**
+
+Xato faraz: «kontekst bor» ≠ «o'ylash kerak emas». Aksincha, eng ko'p
+mulohaza talab qiladigan savollar aynan kontekstli:
+
+| Toifa | Nega HUKM |
+|---|---|
+| tasnif | «elektr skuter qaysi kodga kiradi» — kontekstdan o'qish emas |
+| kelib chiqish | 300-moddani tovar, davlat va sertifikat bilan bog'lash |
+| imtiyoz | shart bajarilgan-bajarilmaganini tekshirish |
+| bilvosita hisob | «olib kirsam nima bo'ladi» — aslida summa so'ralyapti |
+
+Endi sukut — `Full`, arzon darajaga tushish uchun **asos** kerak.
+Undan keyin `Mid` ham, `Cheap` ham butunlay o'chirildi: bu ilova pul
+va jarima haqida javob beradi, shuning uchun arzonlashtirish ochiq
+tanlov bo'lishi kerak, jimgina sukut emas.
+
+⚠️ **Bo'sh gapga kontekst izlanmaydi.** Qidiruv «salom» ga ham parcha
+topadi (so'z ichidan: «**salom**atlik»), shuning uchun salomlashishga
+13 878 belgi qonun matni qo'shilardi — o'lchangan narxi $0,039, ya'ni
+haqiqiy huquqiy savoldan qimmat. Endi «salom» so'rovi **6 token**
+kirish bilan ketadi (`TestSmallTalkGetsNoContext`). Ya'ni hammasi
+Opus da bo'lsa ham, bo'sh gap deyarli tekin.
+
+⚠️ **Hisob-kitob suhbati oxirigacha `Full` da qoladi.** `modelOf` butun
+tarixni ko'radi, faqat oxirgi xabarni emas. Sabab: davomi qisqa keladi —
+*«unda 500 kg bo'lsa-chi?»* — unda na hisob so'zi, na kod bor va u
+jimgina arzon darajaga tushardi (`TestRoutingRemembersCalcIntent`).
+
+⚠️ **Valyuta kursi bloki `retrieved` ni YOQMAYDI.** U deyarli har
+so'rovga qo'shiladi; sanalganda `retrieved` hech qachon `false`
+bo'lmasdi va arzon daraja **o'lik kod** edi — o'lchandi, «salom» ham
+Opus ga ketardi (`TestRatesBlockDoesNotCountAsRetrieval`).
+
+**Muqobil provayder (GLM / Z.ai) — SUKUT BO'YICHA O'CHIQ.**
+`internal/llm/glm.go` da OpenAI-mos adapter bor, lekin u **ikkita** shart
+bilan yoqiladi: `GLM_ENABLED=1` va `GLM_API_KEY`. Faqat kalit yetarli
+emas — muhitda tasodifan qolib ketgan kalit jimgina provayderni
+almashtirib yuborardi va javob boshqa modeldan kelayotgani sezilmay
+qolardi. Yoqilgani jurnalda va admin panelida OCHIQ ko'rsatiladi.
+
+⚠️ GLM-5.2 **rasmni qabul qilmaydi** (Z.ai: "Input Modalities: Text").
+Yoqilgan bo'lsa ham rasmli xabar Claude ga ketadi — buni
+`llm.pickModel` qat'iy ta'minlaydi (`TestImageNeverReachesGLM`).
 **4. So'rov cheklovlari** (`internal/api/limit.go`). IP bo'yicha daqiqasiga
 va kuniga; hajm chegarasi hamma POST so'rovga. Faqat `/api/chat*` yo'llari
 cheklanadi — health va kalkulyator arzon.
@@ -482,14 +1118,39 @@ cheklanadi — health va kalkulyator arzon.
 | `MAX_BODY_BYTES` | 8 MB | So'rov hajmi (rasm base64 bilan keladi) |
 | `TRUST_PROXY` | — | `1` bo'lsa `X-Forwarded-For` ga ishoniladi |
 | `ANTHROPIC_MAX_TOKENS` | 2048 | Javob uzunligi chegarasi |
-| `ANTHROPIC_FAST_MODEL` | haiku-4.5 | Arzon model |
+| `ANTHROPIC_FAST_MODEL` | haiku-4.5 | GLM yo'q bo'lsa ishlatiladigan zaxira arzon model |
+| `GLM_API_KEY` | — | Bo'lmasa arzon provayder o'chiq (hammasi Claude da) |
+| `GLM_MODEL` | `glm-5.2` | Z.ai modeli |
+| `GLM_API_URL` | Z.ai v4 | OpenAI-mos endpoint; testda soxta server |
+| `GLM_TIMEOUT_SECONDS` | 180 | 1M kontekstda birinchi belgi kechikishi uzun |
+| `ANTHROPIC_CACHE_TTL` | — | `1h` — siyrak trafikda arzonroq kesh |
 
-⚠️ Bu autentifikatsiya **o'rnini bosmaydi** — u kelgunicha eng kam himoya.
 Hisoblagich xotirada, ya'ni bitta server nusxasi uchun; bir nechta server
 ishlaganda umumiy hisoblagich (Redis) kerak bo'ladi.
 
 ⚠️ `TRUST_PROXY` faqat ishonchli proksi orqasida yoqilsin — aks holda
 mijoz `X-Forwarded-For` ni qalbakilashtirib chegarani aylanib o'tadi.
+
+**5. Tarixni kesish** (`internal/chat/history.go`). Mijoz har so'rovda
+BUTUN suhbatni yuboradi. Ya'ni 10-savolda avvalgi to'qqizta savol-javob
+yana bir marta to'lanadi, eng og'iri esa **suratlar**: bitta 1600px surat
+~300 KB base64 va u suhbat oxirigacha har safar qayta ketardi.
+
+| Chegara | Qiymat | Nima uchun |
+|---|---|---|
+| `maxHistoryMessages` | 20 | 10 savol-javob; undan oldingisi odatda javoblarda takrorlangan |
+| `maxHistoryChars` | 40 000 | Faqat MATN. Retrieval alohida 24 000 gacha qo'shadi |
+| `imageMessages` | 2 | Suratlari saqlanadigan oxirgi xabarlar |
+
+Suratlar matn byudjetiga **kirmaydi** va bu ataylab: bitta surat har
+qanday matn byudjetidan katta, ikkalasini bitta hisobga qo'shsak qoidalar
+bir-birini yeb qo'yardi (buni `TestTrimDropsOldImages` topgan). Suratlar
+SONI bilan, matn HAJMI bilan chegaralanadi.
+
+Olib tashlangan surat o'rniga kontekstga **eslatma yoziladi** — model
+suratni "yo'q edi" deb emas, "olib tashlangan" deb bilsin.
+
+O'lchangan: uchta suratli suhbatda kontekst **900 KB → 600 KB** (33%).
 
 **Sarfni ko'rish.** Har so'rovdan keyin jurnalga yoziladi:
 
@@ -587,6 +1248,12 @@ Bular bilib turib qoldirilgan — ishlatishdan oldin hisobga olish kerak.
 
 **Hisoblashda:**
 
+- [x] **Bojning kombinatsiyalangan stavkasi** qo'shildi — 1 555 kodda
+      («10%, lekin kg uchun $0,5 dan kam emas»). Ilgari qat'iy qism
+      ekstraktorda o'qilar, lekin chiqarilmasdi va boj kam hisoblanardi.
+- [ ] **Birlashtirish qoidasini huquqiy tasdiqlash.** Kattasi olinadi
+      («…dan kam emas»), lekin bu manbada yozilmagan — ПП-3818 1-ilova
+      matni bilan solishtirish kerak.
 - [ ] **Aksizning qat'iy va kombinatsiyalangan stavkalari.** `Calculate` aksizni
       faqat foizda oladi. Aroq, sigaret, benzin kabi tovarlarda stavka qat'iy
       summa (so'm/litr, so'm/1000 dona) — bunday tovarni kalkulyator hisoblay
@@ -625,13 +1292,116 @@ Bular bilib turib qoldirilgan — ishlatishdan oldin hisobga olish kerak.
 **Qidiruvda:**
 
 - [ ] Kalit so'z qidiruvi sinonimni tushunmaydi: `aroq` so'rovi alkogol
-      moddasini 14-o'ringa tushiradi, `noutbuk` esa umuman topilmaydi.
-      Yechimi — embedding (vektor) qidiruvi.
+      moddasini 14-o'ringa tushiradi. Yechimi — embedding (vektor) qidiruvi.
+      (`noutbuk` endi topiladi — sinonim jadvali orqali.)
+- [x] **Qaratqich «-i» qo'shimchasi** kesiladigan bo'ldi (`stripIzafat`).
+      O'zbekchada tovar deyarli doim shu shaklda ataladi — «havo
+      konditsioneri», «telefon apparati». Unlidan keyingi «-si» ro'yxatda
+      bor edi, undoshdan keyingi yalang «-i» esa yo'q — natijada «havo
+      konditsioneri» so'rovi 8415 ni UMUMAN qaytarmay, yog'-moy guruhini
+      (1518) birinchi qilardi. Eval to'plamida **top-1 16→17, top-5
+      21→22**, regressiyasiz.
+- [ ] ⚠️ **TIF TN qidiruvida ahamiyatlilik chegarasi MUMKIN EMAS** —
+      sinaldi va o'lchov bilan rad etildi (`hscode.go` da batafsil).
+      Xom ball hadlar yig'indisi, ya'ni uzun matn avtomatik yuqori
+      chiqadi (ma'nosiz jumla 109, aniq «noutbuk» 73). Ballni so'rovning
+      nazariy maksimumiga bo'lib normallashtirish **qisqa** so'rovlarda
+      chiroyli ajratdi, lekin butun eval to'plamida to'plamlar ustma-ust
+      tushdi:
+
+      | nisbat | tur | so'rov |
+      |---|---|---|
+      | 0,066 | haqiqiy | Koreyadan 2019-yilgi Hyundai Sonata… |
+      | 0,124 | haqiqiy | Dongfeng musor tashuvchi mashina… |
+      | 0,153 | shovqin | Bu invoysdagi tovar… |
+      | 0,272 | shovqin | kim yaratgan seni |
+      | 0,333 | haqiqiy | naushnik |
+
+      Sabab: «Hyundai», «Dongfeng» kabi noyob nomlar maxrajni shishiradi,
+      lekin nomenklaturada uchramaydi — ya'ni brend nomi yozadigan
+      foydalanuvchi eng ko'p jazolanardi. 0,35 chegarasi bilan eval
+      top-5 **22/22 → 18/22**. Yechim faqat embedding qidiruvida.
+- [ ] ⚠️ **Qonun qidiruvida ham chegara MUMKIN EMAS** — qo'yildi va
+      keng o'lchovdan keyin OLIB TASHLANDI. Kichik namunada ajratish
+      chiroyli ko'ringan edi (shovqin 13–14,5; haqiqiy 18,5–23,7),
+      lekin 78 ta haqiqiy so'rovda to'plamlar ustma-ust tushdi:
+
+      | ball | tur | so'rov |
+      |---|---|---|
+      | 11,46 | **haqiqiy** | bojxona jarimasi |
+      | 12,79 | **haqiqiy** | jarima |
+      | 13,22 | shovqin | salom |
+      | 14,50 | shovqin | nima qila olasan |
+
+      Ya'ni deklarantning eng muhim savollaridan biri — **jarima** —
+      shovqindan ham past ball oladi va chegara uni qonun kontekstisiz
+      qoldirardi (jami 78 dan 4 tasi butunlay, 8 tasi qisman).
+      `TestRealQuestionsKeepLawContext` buni qo'riqlaydi.
+- [x] **Shovqin boshqa yo'l bilan hal qilindi.** Ball chegarasi o'rniga
+      savolning O'ZI tekshiriladi: bo'sh gap («salom», «rahmat») bo'lsa
+      qidiruv UMUMAN ishlamaydi. O'lchangan natija chegaradan ham
+      yaxshi — «salom» so'rovi 7 710 token o'rniga **8 token**
+      (`TestSmallTalkGetsNoContext`).
+- [ ] **Nomenklatura lug'at bo'shlig'i.** Ba'zi tovar bazada o'z nomi bilan
+      YO'Q. 8705 (maxsus avtotransport) tavsifida misollar sanalgan
+      ("аварийные, автокраны, пожарные, автобетономешалки, для уборки
+      дорог"), lekin **мусоровоз yo'q** — shuning uchun "musor tashuvchi
+      mashina" so'rovi 8433 (qishloq xo'jaligi mashinalari) ni birinchi
+      qilgan edi, ya'ni 30% o'rniga 0–5% boj ko'rsatilardi. Bu real
+      fotosuratda aniqlandi.
+      Vaqtinchalik yechim — `phraseSynonyms` (ibora → nomenklatura atamasi,
+      `hscode.go`). Har bir bo'shliq qo'lda topilishi kerak, ya'ni bu
+      yechim MIQYOSLANMAYDI; chinakam yechim — embedding qidiruvi.
+      `TestSpecialVehiclePhrases` va `TestSpecialVehicleNoRegression`
+      shu holatni qo'riqlaydi.
 
 **Sinovda:**
 
 - [x] Chat haqiqiy `ANTHROPIC_API_KEY` bilan sinaldi (2026-07-19): kod
       qidirish, boj/QQS/yig'im hisobi va lex.uz havolasi ishlaydi.
+- [x] **Ikkinchi jonli sinov (2026-08-09)** — to'rt so'rov, uchta nuqson
+      topildi va uchalasi ham test bilan yopildi:
+      1. Model kombinatsiyalangan stavkani e'tiborsiz qoldirdi (bojni
+         2,56 mln dedi, aslida 6,05 mln) — `formatMatches` faqat foizni
+         yozardi. `TestContextIncludesSpecificDuty`.
+      2. Model kodni ALMASHTIRDI: `9405 42 003 9` so'raldi, javob
+         `…003 2` bo'yicha keldi — jumla ichidagi aniq kod top-8 ga
+         chiqmagan. `promoteExplicit` + `TestExplicitCodeGoesFirst`.
+      3. Rasm biriktirilganda qidiruv begona kodlarni beradi (pastga
+         qarang). `TestRetrievalWarnsAboutImages`.
+      Rasm va SSE oqimi ishladi: 1,6 MB invoys yuborildi, 49 ta oqim
+      hodisasi keldi, model tovar, model raqami, miqdor va $15 000 ni
+      to'g'ri o'qidi.
+- [ ] ⚠️ **Qidiruv SURATNI KO'RMAYDI.** Retrieval faqat savol MATNIDAN
+      ishlaydi. Invoys surati yuborilib «tovarni o'qi va bojni hisobla»
+      deyilsa, matnda tovar nomi bo'lmaydi va bazadan butunlay begona
+      kodlar keladi — jonli sinovda konditsioner invoysiga yog'-moy
+      guruhi (1515–2306) keldi. Hozircha kontekst boshiga OGOHLANTIRISH
+      qo'yiladi va model o'sha stavkalarni ishlatmasligi aytiladi
+      (sinovda model buni o'zi ham sezdi va aytdi). To'liq yechim —
+      modelga `hscode_search` ASBOBINI berish, ya'ni u suratni o'qib
+      BO'LGACH o'zi qidirsin. Bu chatni tool-use ga o'tkazishni talab
+      qiladi (oqim va GLM provayderiga ham tegadi), shuning uchun
+      alohida ish sifatida qoldirildi.
+- [x] **«Misol bilan hisoblash» taqiqlandi.** Model raqam yetishmaganda
+      «Hozircha misol bilan tushuntiraman (aniq raqamlar bergach, qayta
+      hisoblab beraman)» deb butun hisobni SOXTA summalar bilan
+      chiqarardi. Javobda bunday summa haqiqiysidan farq qilmaydi —
+      foydalanuvchi uni ko'chirib olib deklaratsiyada ishlatishi mumkin.
+      Endi yetishmayotgan raqam so'raladi; formula raqamsiz ko'rsatiladi.
+      Istisno — foydalanuvchining o'zi misol so'rasa.
+      `TestSystemPromptForbidsInventedNumbers`.
+- [x] ⚠️ **Kesilgan javob endi BELGILANADI.** `max_tokens` ga urilgan
+      javob API xato bermasdan gap o'rtasida tugaydi. Android sinovida
+      (2026-08-09) boj hisobi aynan shunday kesildi va oxiridagi
+      "kelib chiqish sertifikati bo'lmasa boj IKKI BAROBAR"
+      ogohlantirishi yo'qoldi — foydalanuvchi javobni to'liq deb o'qib,
+      kam to'lov hisoblab qolardi. Endi `stop_reason` o'qiladi va
+      javob oxiriga ochiq ogohlantirish qo'shiladi (oqimda ham).
+      `TestCompleteMarksTruncation`, `TestStreamMarksTruncation`.
+- [ ] **Model arifmetikasi kalkulyatordan ~1 000 so'm chetlashdi**
+      (10 304 240 vs 10 304 360). Kalkulyator asosiy manba;
+      hisob-kitobda uning natijasini ko'rsatish kerak, modelnikini emas.
 - [x] `chat`, `api` va `llm` paketlari test bilan qoplandi (71 test).
       LLM so'rovlari `ANTHROPIC_API_URL` orqali soxta serverga yo'naltiriladi,
       shuning uchun testlar tarmoqqa chiqmaydi va kalit talab qilmaydi.
