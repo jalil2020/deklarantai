@@ -29,10 +29,10 @@ chat bor.
 Deklarant AI/
 ├── backend/                  # Go REST API
 │   ├── main.go
-│   ├── data/hscodes.json     # TIF TN bazasi (13 142 kod)
-│   ├── data/laws.json        # qonun korpusi (1 405 parcha)
-│   ├── data/docs.json        # hujjat talablari (15 112 qoida)
-│   ├── data/countries.json   # davlatlar va boj rejimi (254 ta)
+│   ├── data/hscodes.json     # TIF TN bazasi (13 142 kod)      ⚠️ gitda YO'Q
+│   ├── data/laws.json        # qonun korpusi (1 405 parcha)    ⚠️ gitda YO'Q
+│   ├── data/docs.json        # hujjat talablari (15 112 qoida) ⚠️ gitda YO'Q
+│   ├── data/countries.json   # davlatlar va boj rejimi (254)   ⚠️ gitda YO'Q
 │   └── internal/
 │       ├── api/              # HTTP handlerlar + CORS
 │       ├── hscode/           # kod qidiruv
@@ -356,6 +356,28 @@ Extraktordagi ikkita nozik joy — ikkalasi ham manbadagi nomuvofiqlik:
 kirill **homoglif** (`ХХI` dagi Х — U+0425, lotin X emas) va sarlavha
 ichidagi **yangi qator** (regexga `s` bayrog'i kerak). Ularsiz XXI bo'lim
 va bir necha guruh tanilmay qolgan edi.
+
+## ⚠️ Ma'lumot fayllari repozitoriyada YO'Q
+
+`backend/data/*.json` gitga chiqmaydi. Klon qilgandan keyin ularni
+QAYTA YASASH kerak — aks holda server ishga tushmaydi.
+
+| Fayl | Yasash | Manba |
+|---|---|---|
+| `hscodes.json` | `node tools/extract-hscodes.mjs --date=2026-07-19` | `data/manba/*.sqlite` |
+| `laws.json` | `node tools/extract-laws.mjs` | lex.uz |
+| `docs.json` | `node tools/extract-docs.mjs` | `data/manba/*.sqlite` |
+| `countries.json` | `node tools/extract-countries.mjs` | `data/manba/*.sqlite` |
+| `taxonomy.json` | `node tools/extract-taxonomy.mjs` | `data/manba/*.sqlite` |
+
+**NEGA GITDA EMAS:** ikki sabab. Birinchisi — hajm (24 MB, va ular
+har stavka yangilanishida qayta yasaladi). Ikkinchisi va muhimrog'i —
+bu fayllar manba bazasidan chiqarilgan, ya'ni kelib chiqishi
+bo'yicha nashr qilish savol tug'diradi.
+
+⚠️ `backend/data/manba/*.sqlite` ham gitda yo'q va **bo'lmasligi
+ham kerak**: ularda real deklaratsiyalar, 4 670 ta noyob STIR raqami
+va 42 ta telefon raqami bor — bu uchinchi tomonlarning ma'lumoti.
 
 ## Ma'lumotlar bazasi (TIF TN)
 
