@@ -27,7 +27,7 @@ apt-get install -y -qq ca-certificates curl gnupg ufw
 
 log "Swap"
 # ⚠️ 512 MB li serverda swap SHART. O'lchangan: backend bazalarni
-# yuklagach ~133 MB oladi, Caddy ~30 MB, Ubuntu ~110 MB. Zaxira
+# yuklagach ~133 MB oladi, nginx ~11 MB, Ubuntu ~110 MB. Zaxira
 # ozgina qoladi va 1,6 MB invoys rasmi kelganda (base64 dekodlash)
 # tizim OOM-killer'ga borishi mumkin. Swap bilan bu sekinlashishga
 # aylanadi — xizmat o'lmaydi.
@@ -47,24 +47,19 @@ else
 	echo "swap allaqachon bor"
 fi
 
-log "Caddy"
-if ! command -v caddy >/dev/null; then
-	# Rasmiy Caddy omboridan (Cloudsmith) — imzo kaliti bilan.
-	curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' \
-		| gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
-	curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' \
-		| tee /etc/apt/sources.list.d/caddy-stable.list >/dev/null
-	apt-get update -qq
-	apt-get install -y -qq caddy
+log "nginx"
+if ! command -v nginx >/dev/null; then
+	apt-get install -y -qq nginx certbot
 else
-	echo "Caddy allaqachon o'rnatilgan"
+	echo "nginx allaqachon o'rnatilgan"
 fi
+# ACME tekshiruvi uchun (sertifikat yangilash).
+mkdir -p /var/www/certbot
 
 log "Foydalanuvchi va papkalar"
 id -u "$APP_USER" >/dev/null 2>&1 || useradd --system --home "$APP_DIR" --shell /usr/sbin/nologin "$APP_USER"
-mkdir -p "$APP_DIR/data" "$WEB_DIR" /var/log/caddy
+mkdir -p "$APP_DIR/data" "$WEB_DIR"
 chown -R "$APP_USER:$APP_USER" "$APP_DIR"
-chown -R caddy:caddy /var/log/caddy
 
 log "Muhit fayli"
 if [ ! -f "$ENV_FILE" ]; then
@@ -110,7 +105,7 @@ log "Xavfsizlik devori"
 ufw allow OpenSSH >/dev/null
 ufw allow 80/tcp >/dev/null
 ufw allow 443/tcp >/dev/null
-# ⚠️ 8080 TASHQARIGA OCHILMAYDI: backend faqat Caddy orqali
+# ⚠️ 8080 TASHQARIGA OCHILMAYDI: backend faqat nginx orqali
 # ko'rinishi kerak, aks holda TLS va CORS chetlab o'tilardi.
 yes | ufw enable >/dev/null 2>&1 || true
 

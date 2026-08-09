@@ -77,7 +77,7 @@ log "Frontend fayllari"
 "${SCP[@]}" -r frontend/dist/. "$USER@$HOST:/var/www/deklarant/"
 
 log "Sozlamalar"
-"${SCP[@]}" deploy/Caddyfile "$USER@$HOST:/etc/caddy/Caddyfile"
+"${SCP[@]}" deploy/nginx.conf "$USER@$HOST:/etc/nginx/sites-available/deklarant"
 "${SCP[@]}" deploy/deklarant.service "$USER@$HOST:/etc/systemd/system/deklarant.service"
 
 # ---------------------------------------------------------------- ishga tushirish
@@ -96,14 +96,14 @@ fi
 mv /opt/deklarant/deklarant.new /opt/deklarant/deklarant
 chmod 755 /opt/deklarant/deklarant
 chown -R deklarant:deklarant /opt/deklarant
-chown -R caddy:caddy /var/www/deklarant
+chown -R www-data:www-data /var/www/deklarant
 
 systemctl daemon-reload
 systemctl enable --now deklarant >/dev/null
 systemctl restart deklarant
 
-caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null
-systemctl reload caddy || systemctl restart caddy
+nginx -t >/dev/null
+systemctl reload nginx || systemctl restart nginx
 
 sleep 2
 systemctl is-active --quiet deklarant || { journalctl -u deklarant -n 30 --no-pager; exit 1; }

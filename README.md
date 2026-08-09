@@ -127,7 +127,7 @@ bor — bu uchinchi tomonlarning ma'lumoti.
 
 ## Joylashtirish
 
-Ishlab chiqarish: **https://deklarantpro.uz** (Caddy + systemd).
+Ishlab chiqarish: **https://deklarantpro.uz** (nginx + systemd).
 
 ```bash
 bash deploy/setup.sh      # serverda, bir marta
