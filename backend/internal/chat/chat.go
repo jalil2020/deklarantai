@@ -15,6 +15,7 @@ import (
 
 	"deklarant-ai/backend/internal/docs"
 	"deklarant-ai/backend/internal/duty"
+	"deklarant-ai/backend/internal/gtd"
 	"deklarant-ai/backend/internal/hscode"
 	"deklarant-ai/backend/internal/laws"
 	"deklarant-ai/backend/internal/llm"
@@ -256,7 +257,25 @@ QOIDALAR:
   QQS bazasiga shu summa qo'shiladi. Miqdor berilmagan bo'lsa — so'ra.
 - Stavkalar baza olingan sanaga tegishli va o'zgarib turadi — muhim qarorlar uchun
   customs.uz yoki bojxona brokeridan tasdiqlashni tavsiya et.
-- Bilmagan narsangni to'qib chiqarma.`
+- Bilmagan narsangni to'qib chiqarma.
+
+⚠️ GTD (YUK BOJXONA DEKLARATSIYASI) GRAFALARINI TO'LDIRISH:
+  Foydalanuvchi deklaratsiya/GTD/grafalarni to'ldirishni so'rasa, savolga
+  "GTD GRAFALARI" bloki qo'shiladi — u har grafni va uni KIM to'ldirishini
+  ko'rsatadi. Qoidalar:
+    • «avto» grafalar — YUQORIDAGI hisobdan to'ldir: 33-graf TIF TN kodini
+      topilgan koddan, 47-grafni to'lovlar hisobidan (har to'lov kodi 10/20/29…
+      alohida qator: turi, asosi, stavkasi, summasi), 45-grafni bojxona
+      qiymatidan, 34-grafni kelib chiqish davlatidan.
+    • «foydalanuvchi» grafalar — bu REKVIZIT (jo'natuvchi, oluvchi STIR,
+      hujjat raqami, vazn, imzo). Ularni O'YLAB TOPMA — foydalanuvchidan
+      SO'RA yoki "[foydalanuvchi kiritadi]" deb qoldir.
+    • «ma'lumotnoma» grafalar — standart kod. Aniq kodni bilmasang, qonun
+      korpusidagi to'ldirish yo'riqnomasiga (06.04.2016) tayan, taxmin qilma.
+    • Natijani JADVAL qilib ber: | Graf | Nomi | Qiymat |. Miqdor yoki narx
+      yetishmasa — o'sha grafni bo'sh qoldirib, nima yetishmayotganini ayt.
+    • ⚠️ Bu YORDAM, tayyor deklaratsiya emas: oxirida "grafalarni rasmiy
+      yo'riqnoma va bojxona brokeri bilan tekshiring" deb ogohlantir.`
 
 // Service — chat xizmati.
 type Service struct {
@@ -521,6 +540,17 @@ func (s *Service) withRetrieval(ctx context.Context, history []llm.Message) ([]l
 		}
 	}
 
+	// GTD GRAFALAR SKELETI — faqat foydalanuvchi deklaratsiya to'ldirishni
+	// so'raganda. Har so'rovda emas: skelet ~1,5 KB va aksariyat savol
+	// GTD haqida emas.
+	//
+	// Skelet yuqoridagi kod/boj bloklari BILAN birga ishlaydi: model
+	// 33/47/45-grafalarni o'sha hisobdan, qolganini yo'riqnoma (qonun
+	// bloki) va foydalanuvchi ma'lumoti bilan to'ldiradi.
+	if hasGTDIntent(last.Content) {
+		blocks = append(blocks, gtd.PromptBlock())
+	}
+
 	// MODEL TANLASH uchun belgi — kurs blokidan OLDIN olinadi.
 	//
 	// ⚠️ NEGA AYNAN SHU YERDA: kurs bloki deyarli DOIM qo'shiladi (u
@@ -704,6 +734,29 @@ func hasCalcIntent(text string) bool {
 		}
 	}
 	return false
+}
+
+// hasGTDIntent — foydalanuvchi deklaratsiya (GTD) to'ldirishni so'rayaptimi.
+//
+// Ibora bo'yicha tekshiriladi, chunki "grafa" yoki "deklaratsiya" so'zi
+// yolg'iz o'zi ham ("deklaratsiya nima") GTD to'ldirish niyati emas.
+// Aniqroq iboralar: "gtd", "grafalarni to'ldir", "deklaratsiya to'ldir".
+func hasGTDIntent(text string) bool {
+	low := strings.ToLower(text)
+	for _, p := range gtdPhrases {
+		if strings.Contains(low, p) {
+			return true
+		}
+	}
+	return false
+}
+
+// gtdPhrases — GTD to'ldirish niyatini bildiruvchi iboralar.
+var gtdPhrases = []string{
+	"gtd", "г тд", "гтд", "byud", "бюд",
+	"grafa", "grafalar", "grafani", "grafalarni",
+	"deklaratsiya to'ldir", "deklaratsiyani to'ldir", "deklaratsiya to'ldi",
+	"yuk deklaratsiya", "bojxona deklaratsiya",
 }
 
 // formatLaws — topilgan qonun parchalarini kontekst bloki sifatida shakllantiradi.

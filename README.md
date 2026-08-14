@@ -135,3 +135,35 @@ bash deploy/release.sh    # mahalliy, har chiqarishda
 ```
 
 Batafsil izohlar `deploy/` papkasidagi fayllarda.
+
+## GTD grafalarini to'ldirish
+
+Chatда deklaratsiya/GTD/grafalarni to'ldirish so'ralса, model **GTD
+grafalari jadvalини** to'ldirib beradi (Yuk bojxona deklaratsiyasi,
+ИМ 40). Ma'lumotnoма — `internal/gtd/fields.go`.
+
+Har graf uch turдан biri bilan to'ldirilади:
+
+| Tur | Kim | Misol |
+|---|---|---|
+| **avto** | mavjud hisob | 33 (TIF TN kod), 47 (to'lovlar), 12/45 (bojxona qiymati), 34 (kelib chiqish) |
+| **foydalanuvchi** | rekvizit | 2 (jo'natuvchi), 8 (oluvchi STIR), 35 (vazn), 54 (imzo) |
+| **ma'lumotnoma** | standart kod | 1 (ИМ 40), 37 (protsedura), 43 (baholash usuli) |
+
+**NEGA MANTIQLI:** GTD ning «aql» talab qiladigan qismi — kod tanlash
+va to'lov hisobi — loyihaning mavjud qismlari (`hscode`, `duty`,
+`countries`) bilan allaqачон yechilган. 34 grafдан **14 tasi avtomatik**.
+
+⚠️ **Skelet faqat GTD so'ralса qo'shiladi** (`hasGTDIntent`) — har
+so'rovда emas, chunki u ~1,5 KB va aksariyat savol GTD haqида emas.
+
+⚠️ **O'ylаб topilган qiymat yo'q.** «foydalanuvchi» grafalari
+`[foydalanuvchi]` deb qoldiriladi, so'raladi — to'qilmaydi. To'ldirish
+qoidаsи (grafalar formatи) qonun korpusидаgi rasmiy yo'riqnomага
+(06.04.2016) tayanади. Javob oxirида «rasmiy yo'riqnoma va broker bilan
+tekshiring» ogohlantirishi bilan — bu yordam, tayyor deklaratsiya emas.
+
+Jonli sinov (2026-08-14): kod 9405 42 003 9, Xitoydan 1000 kg → kod,
+bojxona qiymati (26 015 000), to'lovlar (kombinatsiyalangan stavka
+bilan), kelib chiqish avtomatik to'ldirildi; jo'natuvchi/oluvchi/vazn
+`[foydalanuvchi]` deb qoldirildi.

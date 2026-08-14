@@ -850,3 +850,35 @@ func TestSmallTalkGetsNoContext(t *testing.T) {
 		}
 	}
 }
+
+// GTD to'ldirish so'rovi aniqlanishi va grafalar skeleti qo'shilishi kerak.
+func TestGTDIntentAddsFields(t *testing.T) {
+	s := newService(t)
+	// GTD so'rovi + tovar
+	got, retrieved := s.withRetrieval(context.Background(),
+		userMsg("9405420039 uchun GTD grafalarini to'ldir, Xitoydan 1000 kg"))
+	if !retrieved {
+		t.Fatal("GTD so'roviga kontekst qo'shilmadi")
+	}
+	body := got[0].Content
+	for _, want := range []string{"GRAFALARI — import", "[33] TIF TN kod", "[47] To'lovlar"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("GTD skeletida %q yo'q", want)
+		}
+	}
+	// GTD so'rovi bo'lmasa skelet qo'shilmasin.
+	plain, _ := s.withRetrieval(context.Background(), userMsg("noutbuk bojini hisobla"))
+	if len(plain) > 0 && strings.Contains(plain[0].Content, "GTD GRAFALARI") {
+		t.Error("oddiy savolga ham GTD skeleti qo'shildi")
+	}
+}
+
+// GTD to'ldirish qoidasi tizim ko'rsatmasida bo'lishi kerak.
+func TestSystemPromptHasGTDRule(t *testing.T) {
+	p := newService(t).systemPrompt(ModeDeclarant)
+	for _, want := range []string{"GTD (YUK BOJXONA", "avto» grafalar", "O'YLAB TOPMA"} {
+		if !strings.Contains(p, want) {
+			t.Errorf("GTD qoidasida %q yo'q", want)
+		}
+	}
+}
